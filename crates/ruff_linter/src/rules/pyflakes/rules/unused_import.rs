@@ -274,61 +274,102 @@ pub(crate) fn unused_import(checker: &Checker, scope: &Scope, diagnostics: &mut 
     // Collect all unused imports by statement.
     let mut unused: BTreeMap<(NodeId, Exceptions), Vec<ImportBinding>> = BTreeMap::default();
     let mut ignored: BTreeMap<(NodeId, Exceptions), Vec<ImportBinding>> = BTreeMap::default();
+    let mut funded_imports: Vec<String> = Vec::new();
 
     for binding_id in scope.binding_ids() {
-        let binding = checker.semantic().binding(binding_id);
+        let top_binding = checker.semantic().binding(binding_id);
+        // println!("Top Binding {:?}", &top_binding);
 
-        if binding.is_used()
-            || binding.is_explicit_export()
-            || binding.is_nonlocal()
-            || binding.is_global()
+        if !top_binding.kind.is_import()
+            && (top_binding.is_used()
+                || top_binding.is_explicit_export()
+                || top_binding.is_nonlocal()
+                || top_binding.is_global())
         {
             continue;
         }
 
-        let Some(import) = binding.as_any_import() else {
-            continue;
-        };
-
-        let Some(node_id) = binding.source else {
-            continue;
-        };
-
-        let name = binding.name(checker.locator());
-
-        // If an import is marked as required, avoid treating it as unused, regardless of whether
-        // it was _actually_ used.
-        if checker
-            .settings
-            .isort
-            .required_imports
-            .iter()
-            .any(|required_import| required_import.matches(name, &import))
+        if top_binding.kind.is_class_definition()
+            || top_binding.kind.is_unbound_exception()
+            || top_binding.kind.is_loop_var()
+            || top_binding.kind.is_function_definition()
+            || top_binding.kind.is_assignment()
         {
             continue;
         }
 
-        let import = ImportBinding {
-            name,
-            import,
-            range: binding.range(),
-            parent_range: binding.parent_range(checker.semantic()),
+        let Some(binding_name) = scope.get_name(binding_id) else {
+            continue;
         };
 
-        if checker.rule_is_ignored(Rule::UnusedImport, import.start())
-            || import.parent_range.is_some_and(|parent_range| {
-                checker.rule_is_ignored(Rule::UnusedImport, parent_range.start())
-            })
+        for binding in scope
+            .get_all(binding_name)
+            .map(|binding_id| checker.semantic().binding(binding_id))
         {
-            ignored
-                .entry((node_id, binding.exceptions))
-                .or_default()
-                .push(import);
-        } else {
-            unused
-                .entry((node_id, binding.exceptions))
-                .or_default()
-                .push(import);
+            let name = binding.name(checker.locator());
+
+            if !funded_imports
+                .clone()
+                .into_iter()
+                .find(|r| r == name)
+                .is_none()
+            {
+                continue;
+            }
+            {
+                funded_imports.push(name.to_string());
+            }
+
+            if binding.is_used()
+                || binding.is_explicit_export()
+                || binding.is_nonlocal()
+                || binding.is_global()
+            {
+                continue;
+            }
+
+            let Some(import) = binding.as_any_import() else {
+                continue;
+            };
+
+            let Some(stmt_id) = binding.source else {
+                continue;
+            };
+
+            // If an import is marked as required, avoid treating it as unused, regardless of whether
+            // it was _actually_ used.
+            if checker
+                .settings
+                .isort
+                .required_imports
+                .iter()
+                .any(|required_import| required_import.matches(name, &import))
+            {
+                continue;
+            }
+
+            let import = ImportBinding {
+                name,
+                import,
+                range: binding.range(),
+                parent_range: binding.parent_range(checker.semantic()),
+            };
+
+            if checker.rule_is_ignored(Rule::UnusedImport, import.start())
+                || import.parent_range.is_some_and(|parent_range| {
+                    checker.rule_is_ignored(Rule::UnusedImport, parent_range.start())
+                })
+            {
+                ignored
+                    .entry((stmt_id, binding.exceptions))
+                    .or_default()
+                    .push(import);
+            } else {
+                unused
+                    .entry((stmt_id, binding.exceptions))
+                    .or_default()
+                    .push(import);
+            }
         }
     }
 

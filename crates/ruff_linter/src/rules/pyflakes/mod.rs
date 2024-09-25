@@ -2626,7 +2626,7 @@ lambda: fu
         import foo.baz as foo
         foo
         ",
-            &[Rule::RedefinedWhileUnused],
+            &[Rule::UnusedImport, Rule::RedefinedWhileUnused],
         );
     }
 
@@ -2639,7 +2639,7 @@ lambda: fu
         import fu.bar
         fu.x
         ",
-            &[],
+            &[Rule::UnusedImport],
         );
 
         flakes(
@@ -2648,7 +2648,7 @@ lambda: fu
         import fu
         fu.x
         ",
-            &[],
+            &[Rule::UnusedImport],
         );
     }
 
@@ -2682,7 +2682,7 @@ lambda: fu
         import fu
         import fu.bar
         ",
-            &[Rule::UnusedImport],
+            &[Rule::UnusedImport, Rule::UnusedImport],
         );
     }
 

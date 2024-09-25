@@ -24,6 +24,7 @@ pub struct Scope<'a> {
 
     /// A map from bound name to binding ID.
     bindings: FxHashMap<&'a str, BindingId>,
+    binding_name: FxHashMap<BindingId, &'a str>,
 
     /// A map from binding ID to binding ID that it shadows.
     ///
@@ -51,6 +52,7 @@ impl<'a> Scope<'a> {
             parent: None,
             star_imports: Vec::default(),
             bindings: FxHashMap::default(),
+            binding_name: FxHashMap::default(),
             shadowed_bindings: FxHashMap::default(),
             globals_id: None,
             flags: ScopeFlags::empty(),
@@ -63,6 +65,7 @@ impl<'a> Scope<'a> {
             parent: Some(parent),
             star_imports: Vec::default(),
             bindings: FxHashMap::default(),
+            binding_name: FxHashMap::default(),
             shadowed_bindings: FxHashMap::default(),
             globals_id: None,
             flags: ScopeFlags::empty(),
@@ -76,6 +79,7 @@ impl<'a> Scope<'a> {
 
     /// Adds a new binding with the given name to this scope.
     pub fn add(&mut self, name: &'a str, id: BindingId) -> Option<BindingId> {
+        self.binding_name.insert(id, name);
         if let Some(shadowed) = self.bindings.insert(name, id) {
             self.shadowed_bindings.insert(id, shadowed);
             Some(shadowed)
@@ -154,6 +158,11 @@ impl<'a> Scope<'a> {
     /// Returns `true` if this scope uses locals (e.g., `locals()`).
     pub const fn uses_locals(&self) -> bool {
         self.flags.intersects(ScopeFlags::USES_LOCALS)
+    }
+
+    /// Returns the name bound to the given [id](BindingId).
+    pub fn get_name(&self, id: BindingId) -> Option<&'a str> {
+        self.binding_name.get(&id).copied()
     }
 }
 
