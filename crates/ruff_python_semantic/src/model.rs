@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::Path;
 
 use bitflags::bitflags;
@@ -356,7 +357,7 @@ impl<'a> SemanticModel<'a> {
         &mut self,
         binding_id: BindingId,
         name_expr: &ExprName,
-        scope_id: ScopeId,
+        scope_id: &ScopeId,
     ) -> Option<ReadResult>
     {
 
@@ -372,7 +373,7 @@ impl<'a> SemanticModel<'a> {
 
         if let Some(binding_id) = self.resolve_submodule(
             name_expr.id.as_str(),
-            scope_id,
+            *scope_id,
             binding_id,
         ) {
             let reference_id = self.resolved_references.push(
@@ -469,7 +470,7 @@ impl<'a> SemanticModel<'a> {
                 // Mark any submodule aliases as used.
                 if let Some(binding_id) = self.resolve_submodule(
                     name_expr.id.as_str(),
-                    scope_id,
+                    *scope_id,
                     binding_id,
                 ) {
                     let reference_id = self.resolved_references.push(
@@ -516,13 +517,13 @@ impl<'a> SemanticModel<'a> {
 
     /// Resolve a `load` reference to an [`ast::ExprAttribute`].
     pub fn resolve_attribute_load(&mut self, attribute: &ast::ExprAttribute) -> ReadResult {
+        let name_expr;
+
         let mut full_name = format!("{}", attribute.attr.id);
         let mut current_expr = &*attribute.value;
-        let name_expr;
         let mut result = None;
         let mut is_name_exist = false;
-        let mut already_checked_imports: Vec<String> = Vec::new();
-        // println!("Attr {:?}", attribute);
+        let mut already_checked_imports: HashSet<String> = HashSet::new();
 
         while let Expr::Attribute(expr_attr) = &current_expr {
             full_name = format!("{}.{}", expr_attr.attr.id, full_name);
@@ -551,58 +552,54 @@ impl<'a> SemanticModel<'a> {
             }
         }
 
-        for (binding_id, scope_id) in binding_ids.clone() {
-            if let BindingKind::SubmoduleImport(binding_kind) = &self.binding(binding_id).kind
+        for (binding_id, scope_id) in binding_ids.iter() {
+            if let BindingKind::SubmoduleImport(binding_kind) = &self.binding(*binding_id).kind
             {
                 if binding_kind.qualified_name.to_string() == full_name {
                     if let Some(result) = self.resolve_binding(
-                        binding_id,
+                        *binding_id,
                         &name_expr.unwrap(),
-                        scope_id.clone(),
+                        scope_id,
                     ) {
                         return result;
                     }
                 }
             }
-            if let BindingKind::Import(_) = &self.binding(binding_id).kind {
+            if let BindingKind::Import(_) = &self.binding(*binding_id).kind {
                 is_name_exist = true;
             }
         }
 
-        for (binding_id, scope_id) in binding_ids.clone() {
-            let Some(import) = self.binding(binding_id).as_any_import() else {
+        for (binding_id, scope_id) in binding_ids.iter() {
+            let Some(import) = self.binding(*binding_id).as_any_import() else {
                 continue;
             };
-            let name = &import.qualified_name().to_string().split(".").next().unwrap_or("").to_owned();
+            let name = &import.qualified_name().to_string()
+                .split(".").next().unwrap_or("").to_owned();
 
-            match self.bindings[binding_id].kind {
+            match self.bindings[*binding_id].kind {
                 BindingKind::SubmoduleImport(_) if is_name_exist == false => continue,
                 BindingKind::WithItemVar => continue,
                 BindingKind::Import(_) => {
 
-                    if !already_checked_imports
-                        .clone()
-                        .into_iter()
-                        .find(|r| r == name)
-                        .is_none()
+                    if already_checked_imports.contains(&name.to_string())
                     {
                         continue;
-                    }
-                    {
-                        already_checked_imports.push(name.to_string());
+                    } else {
+                        already_checked_imports.insert(name.to_string());
                     }
 
                     result = self.resolve_binding(
-                        binding_id,
+                        *binding_id,
                         &name_expr.unwrap(),
-                        scope_id.clone(),
+                        scope_id,
                     );
                 }
                 _ => {
                     result = self.resolve_binding(
-                        binding_id,
+                        *binding_id,
                         &name_expr.unwrap(),
-                        scope_id.clone(),
+                        scope_id,
                     );
                 }
             }

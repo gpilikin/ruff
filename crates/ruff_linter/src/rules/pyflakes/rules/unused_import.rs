@@ -3,7 +3,7 @@ use std::iter;
 use unicode_normalization::UnicodeNormalization;
 
 use anyhow::{anyhow, bail, Result};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use ruff_diagnostics::{Applicability, Diagnostic, Fix, FixAvailability, Violation};
 use ruff_macros::{derive_message_formats, violation};
@@ -276,7 +276,7 @@ pub(crate) fn unused_import(checker: &Checker, scope: &Scope, diagnostics: &mut 
     // Collect all unused imports by statement.
     let mut unused: BTreeMap<(NodeId, Exceptions), Vec<ImportBinding>> = BTreeMap::default();
     let mut ignored: BTreeMap<(NodeId, Exceptions), Vec<ImportBinding>> = BTreeMap::default();
-    let mut already_checked_imports: Vec<String> = Vec::new();
+    let mut already_checked_imports: HashSet<String> = HashSet::new();
 
     for binding_id in scope.binding_ids() {
         let top_binding = checker.semantic().binding(binding_id);
@@ -293,16 +293,12 @@ pub(crate) fn unused_import(checker: &Checker, scope: &Scope, diagnostics: &mut 
         {
             let name = binding.name(checker.locator());
 
-            if !already_checked_imports
-                .clone()
-                .into_iter()
-                .find(|r| r == name)
-                .is_none()
+            if already_checked_imports.contains(name)
             {
                 continue;
             }
             {
-                already_checked_imports.push(name.to_string());
+                already_checked_imports.insert(name.to_string());
             }
 
             if binding.is_used()
