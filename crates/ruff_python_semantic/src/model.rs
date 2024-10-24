@@ -519,6 +519,10 @@ impl<'a> SemanticModel<'a> {
         let mut full_name = format!("{}", attribute.attr.id);
         let mut current_expr = &*attribute.value;
         let name_expr;
+        let mut result = None;
+        let mut is_name_exist = false;
+        let mut already_checked_imports: Vec<String> = Vec::new();
+        // println!("Attr {:?}", attribute);
 
         while let Expr::Attribute(expr_attr) = &current_expr {
             full_name = format!("{}.{}", expr_attr.attr.id, full_name);
@@ -560,25 +564,55 @@ impl<'a> SemanticModel<'a> {
                     }
                 }
             }
+            if let BindingKind::Import(_) = &self.binding(binding_id).kind {
+                is_name_exist = true;
+            }
         }
 
         for (binding_id, scope_id) in binding_ids.clone() {
+            let Some(import) = self.binding(binding_id).as_any_import() else {
+                continue;
+            };
+            let name = &import.qualified_name().to_string().split(".").next().unwrap_or("").to_owned();
+
             match self.bindings[binding_id].kind {
-                BindingKind::SubmoduleImport(_) => continue,
+                BindingKind::SubmoduleImport(_) if is_name_exist == false => continue,
                 BindingKind::WithItemVar => continue,
-                _ => {
-                    if let Some(result) = self.resolve_binding(
+                BindingKind::Import(_) => {
+
+                    if !already_checked_imports
+                        .clone()
+                        .into_iter()
+                        .find(|r| r == name)
+                        .is_none()
+                    {
+                        continue;
+                    }
+                    {
+                        already_checked_imports.push(name.to_string());
+                    }
+
+                    result = self.resolve_binding(
                         binding_id,
                         &name_expr.unwrap(),
                         scope_id.clone(),
-                    ) {
-                        return result;
-                    }
+                    );
+                }
+                _ => {
+                    result = self.resolve_binding(
+                        binding_id,
+                        &name_expr.unwrap(),
+                        scope_id.clone(),
+                    );
                 }
             }
         }
 
-        ReadResult::NotFound
+        if result.is_none() {
+            ReadResult::NotFound
+        } else {
+            result.unwrap()
+        }
     }
 
     /// Resolve a `load` reference to an [`ast::ExprName`].
