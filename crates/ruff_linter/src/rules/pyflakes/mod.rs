@@ -2704,13 +2704,13 @@ lambda: fu
 
     #[test]
     fn unused_package_with_submodule_import() {
-        // When a package and its submodule are imported, only report once.
+        // When a package and its submodule are imported, report both.
         flakes(
             r"
         import fu
         import fu.bar
         ",
-            &[Rule::UnusedImport],
+            &[Rule::UnusedImport, Rule::UnusedImport],
         );
     }
 
