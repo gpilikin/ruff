@@ -543,6 +543,7 @@ impl<'a> SemanticModel<'a> {
         }
 
         full_name = full_name.trim_end_matches('.').to_string();
+        let parts = full_name.split('.').collect::<Vec<&str>>();
 
         let ancestor_scope_ids: Vec<_> = self.scopes.ancestor_ids(self.scope_id).collect();
         let mut binding_ids: Vec<(BindingId, ScopeId)> = vec![];
@@ -560,42 +561,26 @@ impl<'a> SemanticModel<'a> {
             }
         }
 
-        for (binding_id, scope_id) in binding_ids.iter() {
-            if let BindingKind::SubmoduleImport(binding_kind) = &self.binding(*binding_id).kind
-            {
-                if binding_kind.qualified_name.to_string().contains(name_expr.unwrap().id.as_str()) {
-                    is_submodule = true;
-                }
-                if binding_kind.qualified_name.to_string() == full_name {
-                    if let Some(result) = self.resolve_binding(
-                        *binding_id,
-                        &name_expr.unwrap(),
-                        scope_id,
-                    ) {
-                        return result;
+        for i in 2..=parts.len()  {
+            let part = parts[..i].join(".");
+            for (binding_id, scope_id) in binding_ids.iter() {
+                if let BindingKind::SubmoduleImport(binding_kind) = &self.binding(*binding_id).kind
+                {
+                    if binding_kind.qualified_name.to_string().contains(name_expr.unwrap().id.as_str()) {
+                        is_submodule = true;
+                    }
+                    if binding_kind.qualified_name.to_string() == part {
+                        if let Some(result) = self.resolve_binding(
+                            *binding_id,
+                            &name_expr.unwrap(),
+                            scope_id,
+                        ) {
+                            return result;
+                        }
                     }
                 }
-            }
-            if let BindingKind::Import(_) = &self.binding(*binding_id).kind {
-                is_name_exist = true;
-            }
-        }
-
-        full_name = full_name.rsplit_once(".").map_or(full_name.clone(), |(left, _)| left.to_string());
-        for (binding_id, scope_id) in binding_ids.iter() {
-            if let BindingKind::SubmoduleImport(binding_kind) = &self.binding(*binding_id).kind
-            {
-                if binding_kind.qualified_name.to_string().contains(name_expr.unwrap().id.as_str()) {
-                    is_submodule = true;
-                }
-                if binding_kind.qualified_name.to_string() == full_name {
-                    if let Some(result) = self.resolve_binding(
-                        *binding_id,
-                        &name_expr.unwrap(),
-                        scope_id,
-                    ) {
-                        return result;
-                    }
+                if let BindingKind::Import(_) = &self.binding(*binding_id).kind {
+                    is_name_exist = true;
                 }
             }
         }
