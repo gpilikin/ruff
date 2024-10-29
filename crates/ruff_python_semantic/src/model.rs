@@ -558,6 +558,11 @@ impl<'a> SemanticModel<'a> {
                         return ReadResult::Resolved(binding_id);
                     }
                 }
+                for reference in self.unresolved_references.clone() {
+                    if reference.range().contains_range(name_expr.unwrap().range) {
+                        return ReadResult::NotFound;
+                    }
+                }
             }
         }
 
