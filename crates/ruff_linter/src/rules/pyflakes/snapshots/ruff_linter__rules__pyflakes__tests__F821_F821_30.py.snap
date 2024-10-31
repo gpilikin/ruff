@@ -1,0 +1,9 @@
+---
+source: crates/ruff_linter/src/rules/pyflakes/mod.rs
+---
+F821_30.py:5:5: F821 Undefined name `foo.bag.get`
+  |
+4 | def fu(zxc):
+5 |     foo.bag.get(zxc)
+  |     ^^^^^^^^^^^ F821
+  |

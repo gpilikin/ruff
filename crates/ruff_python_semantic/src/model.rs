@@ -551,22 +551,13 @@ impl<'a> SemanticModel<'a> {
         for (_index, scope_id) in ancestor_scope_ids.into_iter().enumerate() {
             for binding_id in self.scopes[scope_id].get_all(name_expr.unwrap().id.as_str()){
                 binding_ids.push((binding_id, scope_id));
-                for reference_id in self.bindings[binding_id].references() {
-                    if self.resolved_references[reference_id].range()
-                        .contains_range(name_expr.unwrap().range)
-                    {
-                        return ReadResult::Resolved(binding_id);
-                    }
-                }
-                for reference in self.unresolved_references.clone() {
-                    if reference.range().contains_range(name_expr.unwrap().range) {
-                        return ReadResult::NotFound;
-                    }
+                if let BindingKind::Import(_) = &self.binding(binding_id).kind {
+                    is_name_exist = true;
                 }
             }
         }
 
-        for i in 2..=parts.len()  {
+        for i in (2..=parts.len()).rev()  {
             let part = parts[..i].join(".");
             for (binding_id, scope_id) in binding_ids.iter() {
                 if let BindingKind::SubmoduleImport(binding_kind) = &self.binding(*binding_id).kind
@@ -580,16 +571,14 @@ impl<'a> SemanticModel<'a> {
                             &name_expr.unwrap(),
                             scope_id,
                         ) {
-                            return result;
+                            if !is_name_exist {
+                                return result;
+                            }
                         }
                     }
                 }
-                if let BindingKind::Import(_) = &self.binding(*binding_id).kind {
-                    is_name_exist = true;
-                }
             }
         }
-
         // TODO: need to move the block implementation to resolve_load, but carefully
         // start check module import
         for (binding_id, scope_id) in binding_ids.iter() {
@@ -628,6 +617,21 @@ impl<'a> SemanticModel<'a> {
             }
         }
         // end check module import
+
+        for (binding_id, _) in binding_ids.iter() {
+            for reference_id in self.bindings[*binding_id].references() {
+                if self.resolved_references[reference_id].range()
+                    .contains_range(name_expr.unwrap().range)
+                {
+                    return ReadResult::Resolved(*binding_id);
+                }
+            }
+            for reference in self.unresolved_references.clone() {
+                if reference.range().contains_range(name_expr.unwrap().range) {
+                    return ReadResult::NotFound;
+                }
+            }
+        }
 
         if result.is_none() {
             if is_submodule {
