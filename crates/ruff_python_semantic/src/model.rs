@@ -525,6 +525,7 @@ impl<'a> SemanticModel<'a> {
         let mut is_name_exist = false;
         let mut already_checked_imports: HashSet<String> = HashSet::new();
         let mut is_submodule = false;
+        let mut is_no_import = false;
 
         while let Expr::Attribute(expr_attr) = &current_expr {
             full_name = format!("{}.{}", expr_attr.attr.id, full_name);
@@ -548,11 +549,17 @@ impl<'a> SemanticModel<'a> {
         let ancestor_scope_ids: Vec<_> = self.scopes.ancestor_ids(self.scope_id).collect();
         let mut binding_ids: Vec<(BindingId, ScopeId)> = vec![];
 
-        for (_index, scope_id) in ancestor_scope_ids.into_iter().enumerate() {
-            for binding_id in self.scopes[scope_id].get_all(name_expr.unwrap().id.as_str()){
-                binding_ids.push((binding_id, scope_id));
+        for (_index, scope_id) in ancestor_scope_ids.iter().enumerate() {
+            for binding_id in self.scopes[*scope_id].get_all(name_expr.unwrap().id.as_str()){
+                binding_ids.push((binding_id, *scope_id));
                 if let BindingKind::Import(_) = &self.binding(binding_id).kind {
                     is_name_exist = true;
+                }
+                if let BindingKind::Assignment = &self.binding(binding_id).kind {
+                    is_no_import = true;
+                }
+                if let BindingKind::LoopVar = &self.binding(binding_id).kind {
+                    is_no_import = true;
                 }
             }
         }
@@ -629,6 +636,18 @@ impl<'a> SemanticModel<'a> {
             for reference in self.unresolved_references.clone() {
                 if reference.range().contains_range(name_expr.unwrap().range) {
                     return ReadResult::NotFound;
+                }
+            }
+        }
+
+        if is_no_import {
+            for (_index, scope_id) in ancestor_scope_ids.iter().enumerate(){
+                if let Some(binding_id) = self.scopes[*scope_id].get(name_expr.unwrap().id.as_str()) {
+                    result = self.resolve_binding(
+                        binding_id,
+                        &name_expr.unwrap(),
+                        scope_id,
+                    );
                 }
             }
         }
