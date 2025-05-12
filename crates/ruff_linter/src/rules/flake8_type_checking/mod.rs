@@ -471,6 +471,42 @@ mod tests {
     ",
         "tc010_precedence_over_tc008"
     )]
+    #[test_case(
+        r"
+        from __future__ import annotations
+        import importlib.abc
+        from typing import TYPE_CHECKING
+        if TYPE_CHECKING:
+            import importlib.machinery
+        class Foo(importlib.abc.MetaPathFinder):
+            def bar(self) -> importlib.machinery.ModuleSpec: ...
+    ",
+        "github_issue_15723_regression_test"
+    )]
+    #[test_case(
+        r"
+        from __future__ import annotations
+        from typing import TYPE_CHECKING
+        if TYPE_CHECKING:
+            import importlib.abc
+            import importlib.machinery
+        class Foo(importlib.abc.MetaPathFinder):
+            def bar(self) -> importlib.machinery.ModuleSpec: ...
+    ",
+        "github_issue_15723_false_negative"
+    )]
+    #[test_case(
+        r"
+        from __future__ import annotations
+        from typing import TYPE_CHECKING
+        if TYPE_CHECKING:
+            import importlib.machinery
+            import importlib.abc
+        class Foo(importlib.abc.MetaPathFinder):
+            def bar(self) -> importlib.machinery.ModuleSpec: ...
+    ",
+        "github_issue_15723_ideal_import_order"
+    )]
     fn contents(contents: &str, snapshot: &str) {
         let diagnostics = test_snippet(
             contents,
