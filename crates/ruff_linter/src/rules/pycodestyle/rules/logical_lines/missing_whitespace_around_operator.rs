@@ -1,11 +1,11 @@
-use ruff_diagnostics::{AlwaysFixableViolation, Diagnostic, DiagnosticKind, Edit, Fix};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_diagnostics::{AlwaysFixableViolation, Diagnostic, Edit, Fix};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_parser::TokenKind;
-use ruff_text_size::Ranged;
+use ruff_text_size::{Ranged, TextRange};
 
 use crate::checkers::logical_lines::LogicalLinesContext;
 use crate::rules::pycodestyle::helpers::is_non_logical_token;
-use crate::rules::pycodestyle::rules::logical_lines::LogicalLine;
+use crate::rules::pycodestyle::rules::logical_lines::{DefinitionState, LogicalLine};
 
 /// ## What it does
 /// Checks for missing whitespace around all operators.
@@ -28,17 +28,17 @@ use crate::rules::pycodestyle::rules::logical_lines::LogicalLine;
 ///
 /// [PEP 8]: https://peps.python.org/pep-0008/#pet-peeves
 // E225
-#[violation]
-pub struct MissingWhitespaceAroundOperator;
+#[derive(ViolationMetadata)]
+pub(crate) struct MissingWhitespaceAroundOperator;
 
 impl AlwaysFixableViolation for MissingWhitespaceAroundOperator {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("Missing whitespace around operator")
+        "Missing whitespace around operator".to_string()
     }
 
     fn fix_title(&self) -> String {
-        format!("Add missing whitespace")
+        "Add missing whitespace".to_string()
     }
 }
 
@@ -61,17 +61,17 @@ impl AlwaysFixableViolation for MissingWhitespaceAroundOperator {
 ///
 /// [PEP 8]: https://peps.python.org/pep-0008/#pet-peeves
 // E226
-#[violation]
-pub struct MissingWhitespaceAroundArithmeticOperator;
+#[derive(ViolationMetadata)]
+pub(crate) struct MissingWhitespaceAroundArithmeticOperator;
 
 impl AlwaysFixableViolation for MissingWhitespaceAroundArithmeticOperator {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("Missing whitespace around arithmetic operator")
+        "Missing whitespace around arithmetic operator".to_string()
     }
 
     fn fix_title(&self) -> String {
-        format!("Add missing whitespace")
+        "Add missing whitespace".to_string()
     }
 }
 
@@ -94,17 +94,17 @@ impl AlwaysFixableViolation for MissingWhitespaceAroundArithmeticOperator {
 ///
 /// [PEP 8]: https://peps.python.org/pep-0008/#pet-peeves
 // E227
-#[violation]
-pub struct MissingWhitespaceAroundBitwiseOrShiftOperator;
+#[derive(ViolationMetadata)]
+pub(crate) struct MissingWhitespaceAroundBitwiseOrShiftOperator;
 
 impl AlwaysFixableViolation for MissingWhitespaceAroundBitwiseOrShiftOperator {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("Missing whitespace around bitwise or shift operator")
+        "Missing whitespace around bitwise or shift operator".to_string()
     }
 
     fn fix_title(&self) -> String {
-        format!("Add missing whitespace")
+        "Add missing whitespace".to_string()
     }
 }
 
@@ -127,17 +127,17 @@ impl AlwaysFixableViolation for MissingWhitespaceAroundBitwiseOrShiftOperator {
 ///
 /// [PEP 8]: https://peps.python.org/pep-0008/#other-recommendations
 // E228
-#[violation]
-pub struct MissingWhitespaceAroundModuloOperator;
+#[derive(ViolationMetadata)]
+pub(crate) struct MissingWhitespaceAroundModuloOperator;
 
 impl AlwaysFixableViolation for MissingWhitespaceAroundModuloOperator {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("Missing whitespace around modulo operator")
+        "Missing whitespace around modulo operator".to_string()
     }
 
     fn fix_title(&self) -> String {
-        format!("Add missing whitespace")
+        "Add missing whitespace".to_string()
     }
 }
 
@@ -146,6 +146,7 @@ pub(crate) fn missing_whitespace_around_operator(
     line: &LogicalLine,
     context: &mut LogicalLinesContext,
 ) {
+    let mut definition_state = DefinitionState::from_tokens(line.tokens());
     let mut tokens = line.tokens().iter().peekable();
     let first_token = tokens
         .by_ref()
@@ -162,6 +163,8 @@ pub(crate) fn missing_whitespace_around_operator(
     while let Some(token) = tokens.next() {
         let kind = token.kind();
 
+        definition_state.visit_token_kind(kind);
+
         if is_non_logical_token(kind) {
             continue;
         }
@@ -172,10 +175,13 @@ pub(crate) fn missing_whitespace_around_operator(
             TokenKind::Lpar | TokenKind::Lambda => parens += 1,
             TokenKind::Rpar => parens = parens.saturating_sub(1),
             _ => {}
-        };
+        }
 
-        let needs_space = if kind == TokenKind::Equal && (parens > 0 || fstrings > 0) {
+        let needs_space = if kind == TokenKind::Equal
+            && (parens > 0 || fstrings > 0 || definition_state.in_type_params())
+        {
             // Allow keyword args, defaults: foo(bar=None) and f-strings: f'{foo=}'
+            // Also ignore `foo[T=int]`, which is handled by E251.
             NeedsSpace::No
         } else if kind == TokenKind::Slash {
             // Tolerate the "/" operator in function definition
@@ -239,41 +245,38 @@ pub(crate) fn missing_whitespace_around_operator(
             let has_leading_trivia =
                 prev_token.end() < token.start() || is_non_logical_token(prev_token.kind());
 
-            let has_trailing_trivia = tokens.peek().map_or(true, |next| {
-                token.end() < next.start() || is_non_logical_token(next.kind())
-            });
+            let has_trailing_trivia = tokens
+                .peek()
+                .is_none_or(|next| token.end() < next.start() || is_non_logical_token(next.kind()));
 
             match (has_leading_trivia, has_trailing_trivia) {
                 // Operator with trailing but no leading space, enforce consistent spacing.
                 (false, true) => {
-                    let mut diagnostic =
-                        Diagnostic::new(diagnostic_kind_for_operator(kind), token.range());
-                    diagnostic.set_fix(Fix::safe_edit(Edit::insertion(
-                        " ".to_string(),
-                        token.start(),
-                    )));
-                    context.push_diagnostic(diagnostic);
+                    context.push_diagnostic(
+                        diagnostic_kind_for_operator(kind, token.range()).with_fix(Fix::safe_edit(
+                            Edit::insertion(" ".to_string(), token.start()),
+                        )),
+                    );
                 }
                 // Operator with leading but no trailing space, enforce consistent spacing.
                 (true, false) => {
-                    let mut diagnostic =
-                        Diagnostic::new(diagnostic_kind_for_operator(kind), token.range());
-                    diagnostic.set_fix(Fix::safe_edit(Edit::insertion(
-                        " ".to_string(),
-                        token.end(),
-                    )));
-                    context.push_diagnostic(diagnostic);
+                    context.push_diagnostic(
+                        diagnostic_kind_for_operator(kind, token.range()).with_fix(Fix::safe_edit(
+                            Edit::insertion(" ".to_string(), token.end()),
+                        )),
+                    );
                 }
                 // Operator with no space, require spaces if it is required by the operator.
                 (false, false) => {
                     if needs_space == NeedsSpace::Yes {
-                        let mut diagnostic =
-                            Diagnostic::new(diagnostic_kind_for_operator(kind), token.range());
-                        diagnostic.set_fix(Fix::safe_edits(
-                            Edit::insertion(" ".to_string(), token.start()),
-                            [Edit::insertion(" ".to_string(), token.end())],
-                        ));
-                        context.push_diagnostic(diagnostic);
+                        context.push_diagnostic(
+                            diagnostic_kind_for_operator(kind, token.range()).with_fix(
+                                Fix::safe_edits(
+                                    Edit::insertion(" ".to_string(), token.start()),
+                                    [Edit::insertion(" ".to_string(), token.end())],
+                                ),
+                            ),
+                        );
                     }
                 }
                 (true, true) => {
@@ -311,15 +314,15 @@ impl From<bool> for NeedsSpace {
     }
 }
 
-fn diagnostic_kind_for_operator(operator: TokenKind) -> DiagnosticKind {
+fn diagnostic_kind_for_operator(operator: TokenKind, range: TextRange) -> Diagnostic {
     if operator == TokenKind::Percent {
-        DiagnosticKind::from(MissingWhitespaceAroundModuloOperator)
+        Diagnostic::new(MissingWhitespaceAroundModuloOperator, range)
     } else if operator.is_bitwise_or_shift() {
-        DiagnosticKind::from(MissingWhitespaceAroundBitwiseOrShiftOperator)
+        Diagnostic::new(MissingWhitespaceAroundBitwiseOrShiftOperator, range)
     } else if operator.is_arithmetic() {
-        DiagnosticKind::from(MissingWhitespaceAroundArithmeticOperator)
+        Diagnostic::new(MissingWhitespaceAroundArithmeticOperator, range)
     } else {
-        DiagnosticKind::from(MissingWhitespaceAroundOperator)
+        Diagnostic::new(MissingWhitespaceAroundOperator, range)
     }
 }
 

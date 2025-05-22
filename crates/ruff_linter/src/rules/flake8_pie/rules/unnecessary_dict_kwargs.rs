@@ -1,15 +1,15 @@
 use itertools::Itertools;
 use rustc_hash::{FxBuildHasher, FxHashSet};
 
-use ruff_diagnostics::{Diagnostic, Edit, Fix, FixAvailability, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_diagnostics::{Applicability, Diagnostic, Edit, Fix, FixAvailability, Violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::parenthesize::parenthesized_range;
 use ruff_python_ast::{self as ast, Expr};
 use ruff_python_stdlib::identifiers::is_identifier;
 use ruff_text_size::Ranged;
 
 use crate::checkers::ast::Checker;
-use crate::fix::edits::{remove_argument, Parentheses};
+use crate::fix::edits::{Parentheses, remove_argument};
 
 /// ## What it does
 /// Checks for unnecessary `dict` kwargs.
@@ -19,6 +19,7 @@ use crate::fix::edits::{remove_argument, Parentheses};
 /// arguments directly.
 ///
 /// ## Example
+///
 /// ```python
 /// def foo(bar):
 ///     return bar + 1
@@ -28,6 +29,7 @@ use crate::fix::edits::{remove_argument, Parentheses};
 /// ```
 ///
 /// Use instead:
+///
 /// ```python
 /// def foo(bar):
 ///     return bar + 1
@@ -36,27 +38,47 @@ use crate::fix::edits::{remove_argument, Parentheses};
 /// print(foo(bar=2))  # prints 3
 /// ```
 ///
+/// ## Fix safety
+///
+/// This rule's fix is marked as unsafe for dictionaries with comments interleaved between
+/// the items, as comments may be removed.
+///
+/// For example, the fix would be marked as unsafe in the following case:
+///
+/// ```python
+/// foo(
+///     **{
+///         # comment
+///         "x": 1.0,
+///         # comment
+///         "y": 2.0,
+///     }
+/// )
+/// ```
+///
+/// as this is converted to `foo(x=1.0, y=2.0)` without any of the comments.
+///
 /// ## References
 /// - [Python documentation: Dictionary displays](https://docs.python.org/3/reference/expressions.html#dictionary-displays)
 /// - [Python documentation: Calls](https://docs.python.org/3/reference/expressions.html#calls)
-#[violation]
-pub struct UnnecessaryDictKwargs;
+#[derive(ViolationMetadata)]
+pub(crate) struct UnnecessaryDictKwargs;
 
 impl Violation for UnnecessaryDictKwargs {
     const FIX_AVAILABILITY: FixAvailability = FixAvailability::Sometimes;
 
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("Unnecessary `dict` kwargs")
+        "Unnecessary `dict` kwargs".to_string()
     }
 
     fn fix_title(&self) -> Option<String> {
-        Some(format!("Remove unnecessary kwargs"))
+        Some("Remove unnecessary kwargs".to_string())
     }
 }
 
 /// PIE804
-pub(crate) fn unnecessary_dict_kwargs(checker: &mut Checker, call: &ast::ExprCall) {
+pub(crate) fn unnecessary_dict_kwargs(checker: &Checker, call: &ast::ExprCall) {
     let mut duplicate_keywords = None;
     for keyword in &*call.arguments.keywords {
         // keyword is a spread operator (indicated by None).
@@ -75,9 +97,7 @@ pub(crate) fn unnecessary_dict_kwargs(checker: &mut Checker, call: &ast::ExprCal
                 format!("**{}", checker.locator().slice(value)),
                 keyword.range(),
             );
-            checker
-                .diagnostics
-                .push(diagnostic.with_fix(Fix::safe_edit(edit)));
+            checker.report_diagnostic(diagnostic.with_fix(Fix::safe_edit(edit)));
             continue;
         }
 
@@ -115,7 +135,7 @@ pub(crate) fn unnecessary_dict_kwargs(checker: &mut Checker, call: &ast::ExprCal
                     .iter()
                     .all(|kwarg| !duplicate_keywords.contains(kwarg))
                 {
-                    diagnostic.set_fix(Fix::safe_edit(Edit::range_replacement(
+                    let edit = Edit::range_replacement(
                         kwargs
                             .iter()
                             .zip(dict.iter_values())
@@ -136,12 +156,20 @@ pub(crate) fn unnecessary_dict_kwargs(checker: &mut Checker, call: &ast::ExprCal
                             })
                             .join(", "),
                         keyword.range(),
-                    )));
+                    );
+                    diagnostic.set_fix(Fix::applicable_edit(
+                        edit,
+                        if checker.comment_ranges().intersects(dict.range()) {
+                            Applicability::Unsafe
+                        } else {
+                            Applicability::Safe
+                        },
+                    ));
                 }
             }
         }
 
-        checker.diagnostics.push(diagnostic);
+        checker.report_diagnostic(diagnostic);
     }
 }
 

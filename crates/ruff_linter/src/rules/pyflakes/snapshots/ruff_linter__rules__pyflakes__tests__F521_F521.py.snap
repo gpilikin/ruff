@@ -63,8 +63,6 @@ F521.py:9:1: F521 `.format` call has invalid format string: Empty attribute in f
  8 | "{foo..}".format(foo=1)
  9 | "{foo..bar}".format(foo=1)
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^ F521
-10 | 
+10 |
 11 | # The following are all "good" uses of .format
    |
-
-

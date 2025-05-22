@@ -1,10 +1,10 @@
 use ruff_diagnostics::{Diagnostic, Fix, FixAvailability, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::{self as ast, helpers::map_subscript};
 use ruff_text_size::Ranged;
 
 use crate::checkers::ast::Checker;
-use crate::fix::edits::{add_argument, remove_argument, Parentheses};
+use crate::fix::edits::{Parentheses, add_argument, remove_argument};
 
 /// ## What it does
 /// Checks for classes inheriting from `typing.Generic[]` where `Generic[]` is
@@ -47,15 +47,15 @@ use crate::fix::edits::{add_argument, remove_argument, Parentheses};
 /// - [`typing.Generic` documentation](https://docs.python.org/3/library/typing.html#typing.Generic)
 ///
 /// [1]: https://github.com/python/cpython/issues/106102
-#[violation]
-pub struct GenericNotLastBaseClass;
+#[derive(ViolationMetadata)]
+pub(crate) struct GenericNotLastBaseClass;
 
 impl Violation for GenericNotLastBaseClass {
     const FIX_AVAILABILITY: FixAvailability = FixAvailability::Sometimes;
 
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("`Generic[]` should always be the last base class")
+        "`Generic[]` should always be the last base class".to_string()
     }
 
     fn fix_title(&self) -> Option<String> {
@@ -64,7 +64,7 @@ impl Violation for GenericNotLastBaseClass {
 }
 
 /// PYI059
-pub(crate) fn generic_not_last_base_class(checker: &mut Checker, class_def: &ast::StmtClassDef) {
+pub(crate) fn generic_not_last_base_class(checker: &Checker, class_def: &ast::StmtClassDef) {
     let Some(bases) = class_def.arguments.as_deref() else {
         return;
     };
@@ -99,7 +99,7 @@ pub(crate) fn generic_not_last_base_class(checker: &mut Checker, class_def: &ast
         diagnostic.try_set_fix(|| generate_fix(generic_base, bases, checker));
     }
 
-    checker.diagnostics.push(diagnostic);
+    checker.report_diagnostic(diagnostic);
 }
 
 fn generate_fix(

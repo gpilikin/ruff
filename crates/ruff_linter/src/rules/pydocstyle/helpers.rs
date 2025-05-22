@@ -6,9 +6,9 @@ use ruff_python_trivia::Cursor;
 use ruff_source_file::{Line, UniversalNewlines};
 use ruff_text_size::{TextRange, TextSize};
 
+use crate::docstrings::Docstring;
 use crate::docstrings::sections::{SectionContexts, SectionKind};
 use crate::docstrings::styles::SectionStyle;
-use crate::docstrings::Docstring;
 use crate::rules::pydocstyle::settings::{Convention, Settings};
 
 /// Return the index of the first logical line in a string.
@@ -76,11 +76,9 @@ pub(crate) fn get_section_contexts<'a>(
 ) -> SectionContexts<'a> {
     match convention {
         Some(Convention::Google) => {
-            return SectionContexts::from_docstring(docstring, SectionStyle::Google);
+            SectionContexts::from_docstring(docstring, SectionStyle::Google)
         }
-        Some(Convention::Numpy) => {
-            return SectionContexts::from_docstring(docstring, SectionStyle::Numpy);
-        }
+        Some(Convention::Numpy) => SectionContexts::from_docstring(docstring, SectionStyle::Numpy),
         Some(Convention::Pep257) | None => {
             // There are some overlapping section names, between the Google and NumPy conventions
             // (e.g., "Returns", "Raises"). Break ties by checking for the presence of some of the
@@ -121,7 +119,7 @@ pub(crate) fn get_section_contexts<'a>(
                 Ordering::Greater => return google_sections,
                 Ordering::Less => return numpy_sections,
                 Ordering::Equal => {}
-            };
+            }
 
             // 0 sections of either convention? Default to numpy
             if google_sections.len() == 0 {

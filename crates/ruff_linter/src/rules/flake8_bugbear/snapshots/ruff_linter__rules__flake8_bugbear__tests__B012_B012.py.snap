@@ -43,7 +43,7 @@ B012.py:44:21: B012 `return` inside `finally` blocks cause exceptions to be sile
 43 |                 finally:
 44 |                     return  # warning
    |                     ^^^^^^ B012
-45 | 
+45 |
 46 |         finally:
    |
 
@@ -53,7 +53,7 @@ B012.py:66:13: B012 `break` inside `finally` blocks cause exceptions to be silen
 65 |         finally:
 66 |             break  # warning
    |             ^^^^^ B012
-67 | 
+67 |
 68 |             def j():
    |
 
@@ -63,7 +63,7 @@ B012.py:78:13: B012 `continue` inside `finally` blocks cause exceptions to be si
 77 |         finally:
 78 |             continue  # warning
    |             ^^^^^^^^ B012
-79 | 
+79 |
 80 |             def j():
    |
 
@@ -81,7 +81,7 @@ B012.py:101:9: B012 `continue` inside `finally` blocks cause exceptions to be si
 100 |     finally:
 101 |         continue  # warning
     |         ^^^^^^^^ B012
-102 | 
+102 |
 103 | while True:
     |
 
@@ -100,5 +100,3 @@ B012.py:118:17: B012 `break` inside `finally` blocks cause exceptions to be sile
 118 |                 break  # warning
     |                 ^^^^^ B012
     |
-
-

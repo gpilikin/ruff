@@ -1,13 +1,14 @@
 use ruff_diagnostics::Diagnostic;
 use ruff_diagnostics::Violation;
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
+use ruff_python_ast::identifier::Identifier;
 use ruff_python_ast::name::UnqualifiedName;
-use ruff_python_ast::{self as ast, Decorator, Expr, ParameterWithDefault, Parameters};
-use ruff_python_semantic::analyze::visibility;
+use ruff_python_ast::{self as ast, Decorator, Expr, Parameters};
 use ruff_python_semantic::SemanticModel;
-use ruff_text_size::Ranged;
+use ruff_python_semantic::analyze::visibility;
 
 use crate::checkers::ast::Checker;
+use crate::preview::is_bool_subtype_of_annotation_enabled;
 use crate::rules::flake8_boolean_trap::helpers::is_allowed_func_def;
 
 /// ## What it does
@@ -26,6 +27,9 @@ use crate::rules::flake8_boolean_trap::helpers::is_allowed_func_def;
 /// `True` and `False` cases, using an `Enum`, or making the argument a
 /// keyword-only argument, to force callers to be explicit when providing
 /// the argument.
+///
+/// Dunder methods that define operators are exempt from this rule, as are
+/// setters and `@override` definitions.
 ///
 /// In [preview], this rule will also flag annotations that include boolean
 /// variants, like `bool | int`.
@@ -95,38 +99,37 @@ use crate::rules::flake8_boolean_trap::helpers::is_allowed_func_def;
 /// - [_How to Avoid “The Boolean Trap”_ by Adam Johnson](https://adamj.eu/tech/2021/07/10/python-type-hints-how-to-avoid-the-boolean-trap/)
 ///
 /// [preview]: https://docs.astral.sh/ruff/preview/
-#[violation]
-pub struct BooleanTypeHintPositionalArgument;
+#[derive(ViolationMetadata)]
+pub(crate) struct BooleanTypeHintPositionalArgument;
 
 impl Violation for BooleanTypeHintPositionalArgument {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("Boolean-typed positional argument in function definition")
+        "Boolean-typed positional argument in function definition".to_string()
     }
 }
 
 /// FBT001
 pub(crate) fn boolean_type_hint_positional_argument(
-    checker: &mut Checker,
+    checker: &Checker,
     name: &str,
     decorator_list: &[Decorator],
     parameters: &Parameters,
 ) {
+    // https://github.com/astral-sh/ruff/issues/14535
+    if checker.source_type.is_stub() {
+        return;
+    }
     // Allow Boolean type hints in explicitly-allowed functions.
     if is_allowed_func_def(name) {
         return;
     }
 
-    for ParameterWithDefault {
-        parameter,
-        default: _,
-        range: _,
-    } in parameters.posonlyargs.iter().chain(&parameters.args)
-    {
-        let Some(annotation) = parameter.annotation.as_ref() else {
+    for parameter in parameters.posonlyargs.iter().chain(&parameters.args) {
+        let Some(annotation) = parameter.annotation() else {
             continue;
         };
-        if checker.settings.preview.is_enabled() {
+        if is_bool_subtype_of_annotation_enabled(checker.settings) {
             if !match_annotation_to_complex_bool(annotation, checker.semantic()) {
                 continue;
             }
@@ -155,9 +158,9 @@ pub(crate) fn boolean_type_hint_positional_argument(
             return;
         }
 
-        checker.diagnostics.push(Diagnostic::new(
+        checker.report_diagnostic(Diagnostic::new(
             BooleanTypeHintPositionalArgument,
-            parameter.name.range(),
+            parameter.identifier(),
         ));
     }
 }

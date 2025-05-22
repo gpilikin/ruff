@@ -6,7 +6,7 @@ N817.py:2:8: N817 CamelCase `StillBad` imported as acronym `SB`
 1 | import mod.BadAllowed as BA
 2 | import mod.StillBad as SB
   |        ^^^^^^^^^^^^^^^^^^ N817
-3 | 
+3 |
 4 | from mod import BadAllowed as BA
   |
 
@@ -16,5 +16,3 @@ N817.py:5:17: N817 CamelCase `StillBad` imported as acronym `SB`
 5 | from mod import StillBad as SB
   |                 ^^^^^^^^^^^^^^ N817
   |
-
-

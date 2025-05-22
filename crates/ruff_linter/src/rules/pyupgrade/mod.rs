@@ -10,11 +10,12 @@ mod tests {
     use std::path::Path;
 
     use anyhow::Result;
+    use ruff_python_ast::PythonVersion;
     use test_case::test_case;
 
     use crate::registry::Rule;
     use crate::rules::pyupgrade;
-    use crate::settings::types::{PreviewMode, PythonVersion};
+    use crate::settings::types::PreviewMode;
     use crate::test::test_path;
     use crate::{assert_messages, settings};
 
@@ -35,11 +36,14 @@ mod tests {
     #[test_case(Rule::LRUCacheWithMaxsizeNone, Path::new("UP033_1.py"))]
     #[test_case(Rule::LRUCacheWithoutParameters, Path::new("UP011.py"))]
     #[test_case(Rule::NativeLiterals, Path::new("UP018.py"))]
+    #[test_case(Rule::NativeLiterals, Path::new("UP018_CR.py"))]
+    #[test_case(Rule::NativeLiterals, Path::new("UP018_LF.py"))]
     #[test_case(Rule::NonPEP585Annotation, Path::new("UP006_0.py"))]
     #[test_case(Rule::NonPEP585Annotation, Path::new("UP006_1.py"))]
     #[test_case(Rule::NonPEP585Annotation, Path::new("UP006_2.py"))]
     #[test_case(Rule::NonPEP585Annotation, Path::new("UP006_3.py"))]
-    #[test_case(Rule::NonPEP604Annotation, Path::new("UP007.py"))]
+    #[test_case(Rule::NonPEP604AnnotationUnion, Path::new("UP007.py"))]
+    #[test_case(Rule::NonPEP604AnnotationUnion, Path::new("UP045.py"))]
     #[test_case(Rule::NonPEP604Isinstance, Path::new("UP038.py"))]
     #[test_case(Rule::OSErrorAlias, Path::new("UP024_0.py"))]
     #[test_case(Rule::OSErrorAlias, Path::new("UP024_1.py"))]
@@ -57,6 +61,7 @@ mod tests {
     #[test_case(Rule::PrintfStringFormatting, Path::new("UP031_1.py"))]
     #[test_case(Rule::QuotedAnnotation, Path::new("UP037_0.py"))]
     #[test_case(Rule::QuotedAnnotation, Path::new("UP037_1.py"))]
+    #[test_case(Rule::QuotedAnnotation, Path::new("UP037_2.pyi"))]
     #[test_case(Rule::RedundantOpenModes, Path::new("UP015.py"))]
     #[test_case(Rule::RedundantOpenModes, Path::new("UP015_1.py"))]
     #[test_case(Rule::ReplaceStdoutStderr, Path::new("UP022.py"))]
@@ -77,19 +82,35 @@ mod tests {
     #[test_case(Rule::UTF8EncodingDeclaration, Path::new("UP009_8.py"))]
     #[test_case(Rule::UTF8EncodingDeclaration, Path::new("UP009_9.py"))]
     #[test_case(Rule::UTF8EncodingDeclaration, Path::new("UP009_10.py"))]
+    #[test_case(Rule::UTF8EncodingDeclaration, Path::new("UP009_other_other.py"))]
+    #[test_case(Rule::UTF8EncodingDeclaration, Path::new("UP009_other_utf8.py"))]
+    #[test_case(Rule::UTF8EncodingDeclaration, Path::new("UP009_utf8_other.py"))]
+    #[test_case(Rule::UTF8EncodingDeclaration, Path::new("UP009_utf8_utf8.py"))]
+    #[test_case(Rule::UTF8EncodingDeclaration, Path::new("UP009_utf8_utf8_other.py"))]
+    #[test_case(Rule::UTF8EncodingDeclaration, Path::new("UP009_utf8_code_other.py"))]
+    #[test_case(Rule::UTF8EncodingDeclaration, Path::new("UP009_code_utf8_utf8.py"))]
+    #[test_case(
+        Rule::UTF8EncodingDeclaration,
+        Path::new("UP009_hashbang_utf8_other.py")
+    )]
+    #[test_case(Rule::UTF8EncodingDeclaration, Path::new("UP009_many_empty_lines.py"))]
     #[test_case(Rule::UnicodeKindPrefix, Path::new("UP025.py"))]
     #[test_case(Rule::UnnecessaryBuiltinImport, Path::new("UP029.py"))]
     #[test_case(Rule::UnnecessaryClassParentheses, Path::new("UP039.py"))]
     #[test_case(Rule::UnnecessaryDefaultTypeArgs, Path::new("UP043.py"))]
     #[test_case(Rule::UnnecessaryEncodeUTF8, Path::new("UP012.py"))]
     #[test_case(Rule::UnnecessaryFutureImport, Path::new("UP010.py"))]
-    #[test_case(Rule::UnpackedListComprehension, Path::new("UP027.py"))]
     #[test_case(Rule::UselessMetaclassType, Path::new("UP001.py"))]
     #[test_case(Rule::UselessObjectInheritance, Path::new("UP004.py"))]
     #[test_case(Rule::YieldInForLoop, Path::new("UP028_0.py"))]
     #[test_case(Rule::YieldInForLoop, Path::new("UP028_1.py"))]
     #[test_case(Rule::NonPEP695TypeAlias, Path::new("UP040.py"))]
     #[test_case(Rule::NonPEP695TypeAlias, Path::new("UP040.pyi"))]
+    #[test_case(Rule::NonPEP695GenericClass, Path::new("UP046_0.py"))]
+    #[test_case(Rule::NonPEP695GenericClass, Path::new("UP046_1.py"))]
+    #[test_case(Rule::NonPEP695GenericFunction, Path::new("UP047.py"))]
+    #[test_case(Rule::PrivateTypeParameter, Path::new("UP049_0.py"))]
+    #[test_case(Rule::PrivateTypeParameter, Path::new("UP049_1.py"))]
     fn rules(rule_code: Rule, path: &Path) -> Result<()> {
         let snapshot = path.to_string_lossy().to_string();
         let diagnostics = test_path(
@@ -100,13 +121,13 @@ mod tests {
         Ok(())
     }
 
-    #[test_case(Rule::PrintfStringFormatting, Path::new("UP031_0.py"))]
-    fn preview(rule_code: Rule, path: &Path) -> Result<()> {
+    #[test]
+    fn up007_preview() -> Result<()> {
         let diagnostics = test_path(
-            Path::new("pyupgrade").join(path),
+            Path::new("pyupgrade/UP045.py"),
             &settings::LinterSettings {
                 preview: PreviewMode::Enabled,
-                ..settings::LinterSettings::for_rule(rule_code)
+                ..settings::LinterSettings::for_rule(Rule::NonPEP604AnnotationUnion)
             },
         )?;
         assert_messages!(diagnostics);
@@ -118,7 +139,7 @@ mod tests {
         let diagnostics = test_path(
             Path::new("pyupgrade/UP041.py"),
             &settings::LinterSettings {
-                target_version: PythonVersion::Py310,
+                unresolved_target_version: PythonVersion::PY310.into(),
                 ..settings::LinterSettings::for_rule(Rule::TimeoutErrorAlias)
             },
         )?;
@@ -131,7 +152,7 @@ mod tests {
         let diagnostics = test_path(
             Path::new("pyupgrade/UP040.py"),
             &settings::LinterSettings {
-                target_version: PythonVersion::Py311,
+                unresolved_target_version: PythonVersion::PY311.into(),
                 ..settings::LinterSettings::for_rule(Rule::NonPEP695TypeAlias)
             },
         )?;
@@ -147,7 +168,7 @@ mod tests {
                 pyupgrade: pyupgrade::settings::Settings {
                     keep_runtime_typing: true,
                 },
-                target_version: PythonVersion::Py37,
+                unresolved_target_version: PythonVersion::PY37.into(),
                 ..settings::LinterSettings::for_rule(Rule::NonPEP585Annotation)
             },
         )?;
@@ -163,7 +184,7 @@ mod tests {
                 pyupgrade: pyupgrade::settings::Settings {
                     keep_runtime_typing: true,
                 },
-                target_version: PythonVersion::Py310,
+                unresolved_target_version: PythonVersion::PY310.into(),
                 ..settings::LinterSettings::for_rule(Rule::NonPEP585Annotation)
             },
         )?;
@@ -176,7 +197,7 @@ mod tests {
         let diagnostics = test_path(
             Path::new("pyupgrade/future_annotations.py"),
             &settings::LinterSettings {
-                target_version: PythonVersion::Py37,
+                unresolved_target_version: PythonVersion::PY37.into(),
                 ..settings::LinterSettings::for_rule(Rule::NonPEP585Annotation)
             },
         )?;
@@ -189,7 +210,7 @@ mod tests {
         let diagnostics = test_path(
             Path::new("pyupgrade/future_annotations.py"),
             &settings::LinterSettings {
-                target_version: PythonVersion::Py310,
+                unresolved_target_version: PythonVersion::PY310.into(),
                 ..settings::LinterSettings::for_rule(Rule::NonPEP585Annotation)
             },
         )?;
@@ -202,8 +223,11 @@ mod tests {
         let diagnostics = test_path(
             Path::new("pyupgrade/future_annotations.py"),
             &settings::LinterSettings {
-                target_version: PythonVersion::Py37,
-                ..settings::LinterSettings::for_rule(Rule::NonPEP604Annotation)
+                unresolved_target_version: PythonVersion::PY37.into(),
+                ..settings::LinterSettings::for_rules([
+                    Rule::NonPEP604AnnotationUnion,
+                    Rule::NonPEP604AnnotationOptional,
+                ])
             },
         )?;
         assert_messages!(diagnostics);
@@ -215,8 +239,11 @@ mod tests {
         let diagnostics = test_path(
             Path::new("pyupgrade/future_annotations.py"),
             &settings::LinterSettings {
-                target_version: PythonVersion::Py310,
-                ..settings::LinterSettings::for_rule(Rule::NonPEP604Annotation)
+                unresolved_target_version: PythonVersion::PY310.into(),
+                ..settings::LinterSettings::for_rules([
+                    Rule::NonPEP604AnnotationUnion,
+                    Rule::NonPEP604AnnotationOptional,
+                ])
             },
         )?;
         assert_messages!(diagnostics);
@@ -228,8 +255,21 @@ mod tests {
         let diagnostics = test_path(
             Path::new("pyupgrade/UP017.py"),
             &settings::LinterSettings {
-                target_version: PythonVersion::Py311,
+                unresolved_target_version: PythonVersion::PY311.into(),
                 ..settings::LinterSettings::for_rule(Rule::DatetimeTimezoneUTC)
+            },
+        )?;
+        assert_messages!(diagnostics);
+        Ok(())
+    }
+
+    #[test]
+    fn unpack_pep_646_py311() -> Result<()> {
+        let diagnostics = test_path(
+            Path::new("pyupgrade/UP044.py"),
+            &settings::LinterSettings {
+                unresolved_target_version: PythonVersion::PY311.into(),
+                ..settings::LinterSettings::for_rule(Rule::NonPEP646Unpack)
             },
         )?;
         assert_messages!(diagnostics);

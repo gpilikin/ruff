@@ -4,7 +4,7 @@ source: crates/ruff_linter/src/rules/refurb/mod.rs
 FURB180.py:7:10: FURB180 [*] Use of `metaclass=abc.ABCMeta` to define abstract base class
   |
 5 | # Errors
-6 | 
+6 |
 7 | class A0(metaclass=abc.ABCMeta):
   |          ^^^^^^^^^^^^^^^^^^^^^ FURB180
 8 |     @abstractmethod
@@ -76,6 +76,4 @@ FURB180.py:31:34: FURB180 [*] Use of `metaclass=abc.ABCMeta` to define abstract 
    31 |+class A3(B0, abc.ABC, before_metaclass=1):
 32 32 |     pass
 33 33 | 
-34 34 | 
-
-
+34 34 |

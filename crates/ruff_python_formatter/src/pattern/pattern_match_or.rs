@@ -4,11 +4,10 @@ use ruff_python_ast::PatternMatchOr;
 
 use crate::comments::leading_comments;
 use crate::expression::parentheses::{
-    in_parentheses_only_group, in_parentheses_only_soft_line_break_or_space, NeedsParentheses,
-    OptionalParentheses,
+    NeedsParentheses, OptionalParentheses, in_parentheses_only_group,
+    in_parentheses_only_soft_line_break_or_space,
 };
 use crate::prelude::*;
-use crate::preview::is_match_case_parentheses_enabled;
 
 #[derive(Default)]
 pub struct FormatPatternMatchOr;
@@ -43,11 +42,7 @@ impl FormatNodeRule<PatternMatchOr> for FormatPatternMatchOr {
             Ok(())
         });
 
-        if is_match_case_parentheses_enabled(f.context()) {
-            in_parentheses_only_group(&inner).fmt(f)
-        } else {
-            inner.fmt(f)
-        }
+        in_parentheses_only_group(&inner).fmt(f)
     }
 }
 

@@ -212,7 +212,7 @@ F602.py:41:5: F602 Dictionary key `a` repeated
 F602.py:44:12: F602 [*] Dictionary key `a` repeated
    |
 42 | }
-43 | 
+43 |
 44 | x = {a: 1, a: 1}
    |            ^ F602
 45 | x = {a: 1, b: 2, a: 1}
@@ -241,5 +241,3 @@ F602.py:45:18: F602 [*] Dictionary key `a` repeated
 44 44 | x = {a: 1, a: 1}
 45    |-x = {a: 1, b: 2, a: 1}
    45 |+x = {a: 1, b: 2}
-
-

@@ -6,11 +6,12 @@ mod tests {
     use std::path::Path;
 
     use anyhow::Result;
+    use ruff_python_ast::PythonVersion;
     use test_case::test_case;
 
     use crate::registry::Rule;
     use crate::rules::pep8_naming;
-    use crate::settings::types::{PreviewMode, PythonVersion};
+    use crate::settings::types::PreviewMode;
     use crate::test::test_path;
     use crate::{assert_messages, settings};
 
@@ -66,8 +67,8 @@ mod tests {
     #[test_case(Rule::PatchVersionComparison, Path::new("PYI004.pyi"))]
     #[test_case(Rule::QuotedAnnotationInStub, Path::new("PYI020.py"))]
     #[test_case(Rule::QuotedAnnotationInStub, Path::new("PYI020.pyi"))]
-    #[test_case(Rule::PrePep570PositionalArgument, Path::new("PYI063.py"))]
-    #[test_case(Rule::PrePep570PositionalArgument, Path::new("PYI063.pyi"))]
+    #[test_case(Rule::Pep484StylePositionalOnlyParameter, Path::new("PYI063.py"))]
+    #[test_case(Rule::Pep484StylePositionalOnlyParameter, Path::new("PYI063.pyi"))]
     #[test_case(Rule::RedundantFinalLiteral, Path::new("PYI064.py"))]
     #[test_case(Rule::RedundantFinalLiteral, Path::new("PYI064.pyi"))]
     #[test_case(Rule::RedundantLiteralUnion, Path::new("PYI051.py"))]
@@ -124,6 +125,8 @@ mod tests {
     #[test_case(Rule::UnusedPrivateTypedDict, Path::new("PYI049.pyi"))]
     #[test_case(Rule::WrongTupleLengthVersionComparison, Path::new("PYI005.py"))]
     #[test_case(Rule::WrongTupleLengthVersionComparison, Path::new("PYI005.pyi"))]
+    #[test_case(Rule::RedundantNoneLiteral, Path::new("PYI061.py"))]
+    #[test_case(Rule::RedundantNoneLiteral, Path::new("PYI061.pyi"))]
     fn rules(rule_code: Rule, path: &Path) -> Result<()> {
         let snapshot = format!("{}_{}", rule_code.noqa_code(), path.to_string_lossy());
         let diagnostics = test_path(
@@ -134,8 +137,9 @@ mod tests {
         Ok(())
     }
 
-    #[test_case(Rule::CustomTypeVarReturnType, Path::new("PYI019.py"))]
-    #[test_case(Rule::CustomTypeVarReturnType, Path::new("PYI019.pyi"))]
+    #[test_case(Rule::CustomTypeVarForSelf, Path::new("PYI019_0.py"))]
+    #[test_case(Rule::CustomTypeVarForSelf, Path::new("PYI019_0.pyi"))]
+    #[test_case(Rule::CustomTypeVarForSelf, Path::new("PYI019_1.pyi"))]
     fn custom_classmethod_rules(rule_code: Rule, path: &Path) -> Result<()> {
         let snapshot = format!("{}_{}", rule_code.noqa_code(), path.to_string_lossy());
         let diagnostics = test_path(
@@ -154,12 +158,14 @@ mod tests {
 
     #[test_case(Rule::TypeAliasWithoutAnnotation, Path::new("PYI026.py"))]
     #[test_case(Rule::TypeAliasWithoutAnnotation, Path::new("PYI026.pyi"))]
+    #[test_case(Rule::RedundantNoneLiteral, Path::new("PYI061.py"))]
+    #[test_case(Rule::RedundantNoneLiteral, Path::new("PYI061.pyi"))]
     fn py38(rule_code: Rule, path: &Path) -> Result<()> {
         let snapshot = format!("py38_{}_{}", rule_code.noqa_code(), path.to_string_lossy());
         let diagnostics = test_path(
             Path::new("flake8_pyi").join(path).as_path(),
             &settings::LinterSettings {
-                target_version: PythonVersion::Py38,
+                unresolved_target_version: PythonVersion::PY38.into(),
                 ..settings::LinterSettings::for_rule(rule_code)
             },
         )?;

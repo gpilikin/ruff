@@ -1,43 +1,44 @@
 use ruff_diagnostics::{AlwaysFixableViolation, Diagnostic, Edit, Fix};
-use ruff_macros::{derive_message_formats, violation};
-use ruff_python_ast as ast;
+use ruff_macros::{ViolationMetadata, derive_message_formats};
+use ruff_python_ast::{self as ast, PythonVersion};
 use ruff_python_semantic::SemanticModel;
 use ruff_text_size::Ranged;
 
 use crate::Locator;
-use crate::{checkers::ast::Checker, settings::types::PythonVersion};
+use crate::checkers::ast::Checker;
 
 /// ## What it does
-/// Checks for the removal of a prefix or suffix from a string by assigning
-/// the string to a slice after checking `.startswith()` or `.endswith()`, respectively.
+/// Checks for code that could be written more idiomatically using
+/// [`str.removeprefix()`](https://docs.python.org/3/library/stdtypes.html#str.removeprefix)
+/// or [`str.removesuffix()`](https://docs.python.org/3/library/stdtypes.html#str.removesuffix).
+///
+/// Specifically, the rule flags code that conditionally removes a prefix or suffix
+/// using a slice operation following an `if` test that uses `str.startswith()` or `str.endswith()`.
+///
+/// The rule is only applied if your project targets Python 3.9 or later.
 ///
 /// ## Why is this bad?
-/// The methods [`str.removeprefix`](https://docs.python.org/3/library/stdtypes.html#str.removeprefix)
-/// and [`str.removesuffix`](https://docs.python.org/3/library/stdtypes.html#str.removesuffix),
-/// introduced in Python 3.9, have the same behavior
-/// and are more readable and efficient.
+/// The methods [`str.removeprefix()`](https://docs.python.org/3/library/stdtypes.html#str.removeprefix)
+/// and [`str.removesuffix()`](https://docs.python.org/3/library/stdtypes.html#str.removesuffix),
+/// introduced in Python 3.9, have the same behavior while being more readable and efficient.
 ///
 /// ## Example
 /// ```python
-/// filename[:-4] if filename.endswith(".txt") else filename
-/// ```
+/// def example(filename: str, text: str):
+///     filename = filename[:-4] if filename.endswith(".txt") else filename
 ///
-/// ```python
-/// if text.startswith("pre"):
-///     text = text[3:]
+///     if text.startswith("pre"):
+///         text = text[3:]
 /// ```
 ///
 /// Use instead:
 /// ```python
-/// filename = filename.removesuffix(".txt")
+/// def example(filename: str, text: str):
+///     filename = filename.removesuffix(".txt")
+///     text = text.removeprefix("pre")
 /// ```
-///
-/// ```python
-/// text = text.removeprefix("pre")
-/// ```
-#[violation]
-pub struct SliceToRemovePrefixOrSuffix {
-    string: String,
+#[derive(ViolationMetadata)]
+pub(crate) struct SliceToRemovePrefixOrSuffix {
     affix_kind: AffixKind,
     stmt_or_expression: StmtOrExpr,
 }
@@ -47,10 +48,10 @@ impl AlwaysFixableViolation for SliceToRemovePrefixOrSuffix {
     fn message(&self) -> String {
         match self.affix_kind {
             AffixKind::StartsWith => {
-                format!("Prefer `removeprefix` over conditionally replacing with slice.")
+                "Prefer `str.removeprefix()` over conditionally replacing with slice.".to_string()
             }
             AffixKind::EndsWith => {
-                format!("Prefer `removesuffix` over conditionally replacing with slice.")
+                "Prefer `str.removesuffix()` over conditionally replacing with slice.".to_string()
             }
         }
     }
@@ -67,8 +68,8 @@ impl AlwaysFixableViolation for SliceToRemovePrefixOrSuffix {
 }
 
 /// FURB188
-pub(crate) fn slice_to_remove_affix_expr(checker: &mut Checker, if_expr: &ast::ExprIf) {
-    if checker.settings.target_version < PythonVersion::Py39 {
+pub(crate) fn slice_to_remove_affix_expr(checker: &Checker, if_expr: &ast::ExprIf) {
+    if checker.target_version() < PythonVersion::PY39 {
         return;
     }
 
@@ -80,7 +81,6 @@ pub(crate) fn slice_to_remove_affix_expr(checker: &mut Checker, if_expr: &ast::E
             let mut diagnostic = Diagnostic::new(
                 SliceToRemovePrefixOrSuffix {
                     affix_kind: kind,
-                    string: checker.locator().slice(text).to_string(),
                     stmt_or_expression: StmtOrExpr::Expression,
                 },
                 if_expr.range,
@@ -93,14 +93,14 @@ pub(crate) fn slice_to_remove_affix_expr(checker: &mut Checker, if_expr: &ast::E
                 if_expr.start(),
                 if_expr.end(),
             )));
-            checker.diagnostics.push(diagnostic);
+            checker.report_diagnostic(diagnostic);
         }
     }
 }
 
 /// FURB188
-pub(crate) fn slice_to_remove_affix_stmt(checker: &mut Checker, if_stmt: &ast::StmtIf) {
-    if checker.settings.target_version < PythonVersion::Py39 {
+pub(crate) fn slice_to_remove_affix_stmt(checker: &Checker, if_stmt: &ast::StmtIf) {
+    if checker.target_version() < PythonVersion::PY39 {
         return;
     }
     if let Some(removal_data) = affix_removal_data_stmt(if_stmt) {
@@ -111,7 +111,6 @@ pub(crate) fn slice_to_remove_affix_stmt(checker: &mut Checker, if_stmt: &ast::S
             let mut diagnostic = Diagnostic::new(
                 SliceToRemovePrefixOrSuffix {
                     affix_kind: kind,
-                    string: checker.locator().slice(text).to_string(),
                     stmt_or_expression: StmtOrExpr::Statement,
                 },
                 if_stmt.range,
@@ -128,7 +127,7 @@ pub(crate) fn slice_to_remove_affix_stmt(checker: &mut Checker, if_stmt: &ast::S
                 if_stmt.start(),
                 if_stmt.end(),
             )));
-            checker.diagnostics.push(diagnostic);
+            checker.report_diagnostic(diagnostic);
         }
     }
 }
@@ -185,7 +184,7 @@ fn affix_removal_data_stmt(if_stmt: &ast::StmtIf) -> Option<RemoveAffixData> {
     // ```
     if !elif_else_clauses.is_empty() {
         return None;
-    };
+    }
 
     // Cannot safely transform, e.g.,
     // ```python
@@ -266,7 +265,7 @@ fn affix_removal_data<'a>(
         })
     {
         return None;
-    };
+    }
 
     let compr_test_expr = ast::comparable::ComparableExpr::from(
         &test.as_call_expr()?.func.as_attribute_expr()?.value,
@@ -366,7 +365,7 @@ fn affix_matches_slice_bound(data: &RemoveAffixData, semantic: &SemanticModel) -
                 range: _,
                 value: string_val,
             }),
-        ) => operand.as_number_literal_expr().is_some_and(
+        ) if operand.is_number_literal_expr() => operand.as_number_literal_expr().is_some_and(
             |ast::ExprNumberLiteral { value, .. }| {
                 // Only support prefix removal for size at most `u32::MAX`
                 value

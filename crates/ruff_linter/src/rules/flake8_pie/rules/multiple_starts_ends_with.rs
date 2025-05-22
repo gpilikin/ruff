@@ -3,14 +3,14 @@ use std::iter;
 
 use itertools::Either::{Left, Right};
 
-use ruff_python_semantic::{analyze, SemanticModel};
+use ruff_python_semantic::{SemanticModel, analyze};
 use ruff_text_size::{Ranged, TextRange};
 
 use ruff_python_ast::{self as ast, Arguments, BoolOp, Expr, ExprContext, Identifier};
 
 use ruff_diagnostics::AlwaysFixableViolation;
 use ruff_diagnostics::{Diagnostic, Edit, Fix};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 
 use crate::checkers::ast::Checker;
 
@@ -48,8 +48,8 @@ use crate::checkers::ast::Checker;
 /// ## References
 /// - [Python documentation: `str.startswith`](https://docs.python.org/3/library/stdtypes.html#str.startswith)
 /// - [Python documentation: `str.endswith`](https://docs.python.org/3/library/stdtypes.html#str.endswith)
-#[violation]
-pub struct MultipleStartsEndsWith {
+#[derive(ViolationMetadata)]
+pub(crate) struct MultipleStartsEndsWith {
     attr: String,
 }
 
@@ -67,7 +67,7 @@ impl AlwaysFixableViolation for MultipleStartsEndsWith {
 }
 
 /// PIE810
-pub(crate) fn multiple_starts_ends_with(checker: &mut Checker, expr: &Expr) {
+pub(crate) fn multiple_starts_ends_with(checker: &Checker, expr: &Expr) {
     let Expr::BoolOp(ast::ExprBoolOp {
         op: BoolOp::Or,
         values,
@@ -219,7 +219,7 @@ pub(crate) fn multiple_starts_ends_with(checker: &mut Checker, expr: &Expr) {
                 checker.generator().expr(&bool_op),
                 expr.range(),
             )));
-            checker.diagnostics.push(diagnostic);
+            checker.report_diagnostic(diagnostic);
         }
     }
 }

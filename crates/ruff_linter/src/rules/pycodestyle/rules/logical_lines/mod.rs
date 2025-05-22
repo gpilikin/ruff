@@ -18,8 +18,8 @@ pub(crate) use whitespace_around_named_parameter_equals::*;
 pub(crate) use whitespace_before_comment::*;
 pub(crate) use whitespace_before_parameters::*;
 
-use crate::rules::pycodestyle::helpers::is_non_logical_token;
 use crate::Locator;
+use crate::rules::pycodestyle::helpers::is_non_logical_token;
 
 mod extraneous_whitespace;
 mod indentation;
@@ -37,18 +37,17 @@ bitflags! {
     #[derive(Default, Eq, PartialEq, Clone, Copy, Debug)]
     pub(crate) struct TokenFlags: u8 {
         /// Whether the logical line contains an operator.
-        const OPERATOR = 0b0000_0001;
+        const OPERATOR = 1 << 0;
         /// Whether the logical line contains a bracket.
-        const BRACKET = 0b0000_0010;
+        const BRACKET = 1 << 1;
         /// Whether the logical line contains a punctuation mark.
-        const PUNCTUATION = 0b0000_0100;
+        const PUNCTUATION = 1 << 2;
         /// Whether the logical line contains a keyword.
-        const KEYWORD = 0b0000_1000;
+        const KEYWORD = 1 << 3;
         /// Whether the logical line contains a comment.
-        const COMMENT = 0b0001_0000;
-
+        const COMMENT = 1 << 4;
         /// Whether the logical line contains any non trivia token (no comment, newline, or in/dedent)
-        const NON_TRIVIA = 0b0010_0000;
+        const NON_TRIVIA = 1 << 5;
     }
 }
 
@@ -103,7 +102,7 @@ impl<'a> IntoIterator for &'a LogicalLines<'a> {
 /// line breaks.
 ///
 /// ## Examples
-/// This expression forms one logical line because because the array elements are parenthesized.
+/// This expression forms one logical line because the array elements are parenthesized.
 ///
 /// ```python
 /// a = [
@@ -393,7 +392,6 @@ impl LogicalLinesBuilder {
     }
 
     // SAFETY: `LogicalLines::from_tokens` asserts that the file has less than `u32::MAX` tokens and each tokens is at least one character long
-    #[allow(clippy::cast_possible_truncation)]
     fn push_token(&mut self, kind: TokenKind, range: TextRange) {
         let line = &mut self.current_line;
 
@@ -429,7 +427,7 @@ impl LogicalLinesBuilder {
     }
 
     // SAFETY: `LogicalLines::from_tokens` asserts that the file has less than `u32::MAX` tokens and each tokens is at least one character long
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(clippy::cast_possible_truncation)]
     fn finish_line(&mut self) {
         let end = self.tokens.len() as u32;
         if self.current_line.tokens_start < end {
@@ -481,7 +479,8 @@ struct Line {
 enum DefinitionState {
     InClass(TypeParamsState),
     InFunction(TypeParamsState),
-    NotInClassOrFunction,
+    InTypeAlias(TypeParamsState),
+    NotInDefinition,
 }
 
 impl DefinitionState {
@@ -495,11 +494,12 @@ impl DefinitionState {
                 TokenKind::Async if matches!(token_kinds.next(), Some(TokenKind::Def)) => {
                     Self::InFunction(TypeParamsState::default())
                 }
-                _ => Self::NotInClassOrFunction,
+                TokenKind::Type => Self::InTypeAlias(TypeParamsState::default()),
+                _ => Self::NotInDefinition,
             };
             return state;
         }
-        Self::NotInClassOrFunction
+        Self::NotInDefinition
     }
 
     const fn in_function_definition(self) -> bool {
@@ -508,8 +508,10 @@ impl DefinitionState {
 
     const fn type_params_state(self) -> Option<TypeParamsState> {
         match self {
-            Self::InClass(state) | Self::InFunction(state) => Some(state),
-            Self::NotInClassOrFunction => None,
+            Self::InClass(state) | Self::InFunction(state) | Self::InTypeAlias(state) => {
+                Some(state)
+            }
+            Self::NotInDefinition => None,
         }
     }
 
@@ -522,13 +524,13 @@ impl DefinitionState {
 
     fn visit_token_kind(&mut self, token_kind: TokenKind) {
         let type_params_state_mut = match self {
-            Self::InClass(type_params_state) | Self::InFunction(type_params_state) => {
-                type_params_state
-            }
-            Self::NotInClassOrFunction => return,
+            Self::InClass(type_params_state)
+            | Self::InFunction(type_params_state)
+            | Self::InTypeAlias(type_params_state) => type_params_state,
+            Self::NotInDefinition => return,
         };
         match token_kind {
-            TokenKind::Lpar if type_params_state_mut.before_type_params() => {
+            TokenKind::Lpar | TokenKind::Equal if type_params_state_mut.before_type_params() => {
                 *type_params_state_mut = TypeParamsState::TypeParamsEnded;
             }
             TokenKind::Lsqb => match type_params_state_mut {

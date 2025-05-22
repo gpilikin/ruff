@@ -2,15 +2,15 @@ use anyhow::Result;
 
 use ast::Keyword;
 use ruff_diagnostics::{Diagnostic, Edit, Fix, FixAvailability, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::helpers::is_constant;
 use ruff_python_ast::{self as ast, Expr};
 use ruff_text_size::Ranged;
 
-use crate::checkers::ast::Checker;
-use crate::fix::edits::{remove_argument, Parentheses};
-use crate::fix::snippet::SourceCodeSnippet;
 use crate::Locator;
+use crate::checkers::ast::Checker;
+use crate::fix::edits::{Parentheses, remove_argument};
+use crate::fix::snippet::SourceCodeSnippet;
 
 /// ## What it does
 /// Checks for incorrect usages of `default_factory` as a keyword argument when
@@ -38,7 +38,7 @@ use crate::Locator;
 /// keyword to a positional argument will change the behavior of the code, even
 /// if the keyword argument was used erroneously.
 ///
-/// ## Examples
+/// ## Example
 /// ```python
 /// defaultdict(default_factory=int)
 /// defaultdict(default_factory=list)
@@ -49,8 +49,8 @@ use crate::Locator;
 /// defaultdict(int)
 /// defaultdict(list)
 /// ```
-#[violation]
-pub struct DefaultFactoryKwarg {
+#[derive(ViolationMetadata)]
+pub(crate) struct DefaultFactoryKwarg {
     default_factory: SourceCodeSnippet,
 }
 
@@ -59,7 +59,7 @@ impl Violation for DefaultFactoryKwarg {
 
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("`default_factory` is a positional-only argument to `defaultdict`")
+        "`default_factory` is a positional-only argument to `defaultdict`".to_string()
     }
 
     fn fix_title(&self) -> Option<String> {
@@ -73,7 +73,7 @@ impl Violation for DefaultFactoryKwarg {
 }
 
 /// RUF026
-pub(crate) fn default_factory_kwarg(checker: &mut Checker, call: &ast::ExprCall) {
+pub(crate) fn default_factory_kwarg(checker: &Checker, call: &ast::ExprCall) {
     // If the call isn't a `defaultdict` constructor, return.
     if !checker
         .semantic()
@@ -107,7 +107,7 @@ pub(crate) fn default_factory_kwarg(checker: &mut Checker, call: &ast::ExprCall)
         call.range(),
     );
     diagnostic.try_set_fix(|| convert_to_positional(call, keyword, checker.locator()));
-    checker.diagnostics.push(diagnostic);
+    checker.report_diagnostic(diagnostic);
 }
 
 /// Returns `true` if a value is definitively not callable (e.g., `1` or `[]`).

@@ -1,5 +1,5 @@
 use ruff_diagnostics::{AlwaysFixableViolation, Diagnostic, Edit, Fix};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::helpers::is_docstring_stmt;
 use ruff_python_ast::{self as ast, StringLike};
 use ruff_python_semantic::SemanticModel;
@@ -32,13 +32,13 @@ use crate::checkers::ast::Checker;
 /// ```pyi
 /// def foo(arg: str = ...) -> None: ...
 /// ```
-#[violation]
-pub struct StringOrBytesTooLong;
+#[derive(ViolationMetadata)]
+pub(crate) struct StringOrBytesTooLong;
 
 impl AlwaysFixableViolation for StringOrBytesTooLong {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("String and bytes literals longer than 50 characters are not permitted")
+        "String and bytes literals longer than 50 characters are not permitted".to_string()
     }
 
     fn fix_title(&self) -> String {
@@ -47,7 +47,7 @@ impl AlwaysFixableViolation for StringOrBytesTooLong {
 }
 
 /// PYI053
-pub(crate) fn string_or_bytes_too_long(checker: &mut Checker, string: StringLike) {
+pub(crate) fn string_or_bytes_too_long(checker: &Checker, string: StringLike) {
     let semantic = checker.semantic();
 
     // Ignore docstrings.
@@ -59,7 +59,7 @@ pub(crate) fn string_or_bytes_too_long(checker: &mut Checker, string: StringLike
         return;
     }
 
-    if semantic.in_annotation() {
+    if semantic.in_type_definition() | semantic.in_deferred_type_definition() {
         return;
     }
 
@@ -77,7 +77,7 @@ pub(crate) fn string_or_bytes_too_long(checker: &mut Checker, string: StringLike
         "...".to_string(),
         string.range(),
     )));
-    checker.diagnostics.push(diagnostic);
+    checker.report_diagnostic(diagnostic);
 }
 
 /// Count the number of visible characters in an f-string. This accounts for

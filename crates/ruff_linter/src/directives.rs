@@ -11,15 +11,15 @@ use ruff_python_trivia::CommentRanges;
 use ruff_source_file::LineRanges;
 use ruff_text_size::{Ranged, TextLen, TextRange, TextSize};
 
+use crate::Locator;
 use crate::noqa::NoqaMapping;
 use crate::settings::LinterSettings;
-use crate::Locator;
 
 bitflags! {
     #[derive(Debug, Copy, Clone)]
     pub struct Flags: u8 {
-        const NOQA  = 0b0000_0001;
-        const ISORT = 0b0000_0010;
+        const NOQA  = 1 << 0;
+        const ISORT = 1 << 1;
     }
 }
 
@@ -320,7 +320,7 @@ impl<'a> TodoDirective<'a> {
                 subset = &comment[relative_offset.to_usize()..];
             } else {
                 break;
-            };
+            }
         }
 
         None
@@ -366,11 +366,11 @@ mod tests {
     use ruff_python_trivia::CommentRanges;
     use ruff_text_size::{TextLen, TextRange, TextSize};
 
+    use crate::Locator;
     use crate::directives::{
-        extract_isort_directives, extract_noqa_line_for, TodoDirective, TodoDirectiveKind,
+        TodoDirective, TodoDirectiveKind, extract_isort_directives, extract_noqa_line_for,
     };
     use crate::noqa::NoqaMapping;
-    use crate::Locator;
 
     use super::IsortDirectives;
 

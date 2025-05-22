@@ -3,15 +3,15 @@ use std::borrow::Cow;
 use itertools::Itertools;
 
 use ruff_diagnostics::{Diagnostic, Edit, Fix, FixAvailability, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::str::{leading_quote, trailing_quote};
 use ruff_python_index::Indexer;
 use ruff_python_parser::{TokenKind, Tokens};
 use ruff_source_file::LineRanges;
 use ruff_text_size::{Ranged, TextRange};
 
-use crate::settings::LinterSettings;
 use crate::Locator;
+use crate::settings::LinterSettings;
 
 /// ## What it does
 /// Checks for implicitly concatenated strings on a single line.
@@ -34,15 +34,15 @@ use crate::Locator;
 /// ```python
 /// z = "The quick brown fox."
 /// ```
-#[violation]
-pub struct SingleLineImplicitStringConcatenation;
+#[derive(ViolationMetadata)]
+pub(crate) struct SingleLineImplicitStringConcatenation;
 
 impl Violation for SingleLineImplicitStringConcatenation {
     const FIX_AVAILABILITY: FixAvailability = FixAvailability::Sometimes;
 
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("Implicitly concatenated string literals on one line")
+        "Implicitly concatenated string literals on one line".to_string()
     }
 
     fn fix_title(&self) -> Option<String> {
@@ -81,14 +81,23 @@ impl Violation for SingleLineImplicitStringConcatenation {
 /// ## Options
 /// - `lint.flake8-implicit-str-concat.allow-multiline`
 ///
+/// ## Formatter compatibility
+/// Using this rule with `allow-multiline = false` can be incompatible with the
+/// formatter because the [formatter] can introduce new multi-line implicitly
+/// concatenated strings. We recommend to either:
+///
+/// * Enable `ISC001` to disallow all implicit concatenated strings
+/// * Setting `allow-multiline = true`
+///
 /// [PEP 8]: https://peps.python.org/pep-0008/#maximum-line-length
-#[violation]
-pub struct MultiLineImplicitStringConcatenation;
+/// [formatter]:https://docs.astral.sh/ruff/formatter/
+#[derive(ViolationMetadata)]
+pub(crate) struct MultiLineImplicitStringConcatenation;
 
 impl Violation for MultiLineImplicitStringConcatenation {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("Implicitly concatenated string literals over multiple lines")
+        "Implicitly concatenated string literals over multiple lines".to_string()
     }
 }
 
@@ -151,7 +160,7 @@ pub(crate) fn implicit(
             }
 
             diagnostics.push(diagnostic);
-        };
+        }
     }
 }
 

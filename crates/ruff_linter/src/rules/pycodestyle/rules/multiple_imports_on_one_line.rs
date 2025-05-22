@@ -1,7 +1,7 @@
 use itertools::Itertools;
 
 use ruff_diagnostics::{Diagnostic, Edit, Fix, FixAvailability, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::{Alias, Stmt};
 use ruff_python_codegen::Stylist;
 use ruff_python_index::Indexer;
@@ -9,8 +9,8 @@ use ruff_python_trivia::indentation_at_offset;
 use ruff_source_file::LineRanges;
 use ruff_text_size::{Ranged, TextRange};
 
-use crate::checkers::ast::Checker;
 use crate::Locator;
+use crate::checkers::ast::Checker;
 
 /// ## What it does
 /// Check for multiple imports on one line.
@@ -30,24 +30,24 @@ use crate::Locator;
 /// ```
 ///
 /// [PEP 8]: https://peps.python.org/pep-0008/#imports
-#[violation]
-pub struct MultipleImportsOnOneLine;
+#[derive(ViolationMetadata)]
+pub(crate) struct MultipleImportsOnOneLine;
 
 impl Violation for MultipleImportsOnOneLine {
     const FIX_AVAILABILITY: FixAvailability = FixAvailability::Sometimes;
 
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("Multiple imports on one line")
+        "Multiple imports on one line".to_string()
     }
 
     fn fix_title(&self) -> Option<String> {
-        Some(format!("Split imports"))
+        Some("Split imports".to_string())
     }
 }
 
 /// E401
-pub(crate) fn multiple_imports_on_one_line(checker: &mut Checker, stmt: &Stmt, names: &[Alias]) {
+pub(crate) fn multiple_imports_on_one_line(checker: &Checker, stmt: &Stmt, names: &[Alias]) {
     if names.len() > 1 {
         let mut diagnostic = Diagnostic::new(MultipleImportsOnOneLine, stmt.range());
         diagnostic.set_fix(split_imports(
@@ -57,7 +57,7 @@ pub(crate) fn multiple_imports_on_one_line(checker: &mut Checker, stmt: &Stmt, n
             checker.indexer(),
             checker.stylist(),
         ));
-        checker.diagnostics.push(diagnostic);
+        checker.report_diagnostic(diagnostic);
     }
 }
 

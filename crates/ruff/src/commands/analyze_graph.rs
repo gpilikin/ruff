@@ -1,14 +1,15 @@
 use crate::args::{AnalyzeGraphArgs, ConfigArguments};
 use crate::resolve::resolve;
-use crate::{resolve_default_files, ExitStatus};
+use crate::{ExitStatus, resolve_default_files};
 use anyhow::Result;
 use log::{debug, warn};
 use path_absolutize::CWD;
 use ruff_db::system::{SystemPath, SystemPathBuf};
 use ruff_graph::{Direction, ImportMap, ModuleDb, ModuleImports};
+use ruff_linter::package::PackageRoot;
 use ruff_linter::{warn_user, warn_user_once};
 use ruff_python_ast::{PySourceType, SourceType};
-use ruff_workspace::resolver::{match_exclusion, python_files_in_path, ResolvedFile};
+use ruff_workspace::resolver::{ResolvedFile, match_exclusion, python_files_in_path};
 use rustc_hash::FxHashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -49,23 +50,33 @@ pub(crate) fn analyze_graph(
                 .collect::<Vec<_>>(),
         )
         .into_iter()
-        .map(|(path, package)| (path.to_path_buf(), package.map(Path::to_path_buf)))
+        .map(|(path, package)| {
+            (
+                path.to_path_buf(),
+                package.map(PackageRoot::path).map(Path::to_path_buf),
+            )
+        })
         .collect::<FxHashMap<_, _>>();
 
     // Create a database from the source roots.
+    let src_roots = package_roots
+        .values()
+        .filter_map(|package| package.as_deref())
+        .filter_map(|package| package.parent())
+        .map(Path::to_path_buf)
+        .filter_map(|path| SystemPathBuf::from_path_buf(path).ok())
+        .collect();
+
     let db = ModuleDb::from_src_roots(
-        package_roots
-            .values()
-            .filter_map(|package| package.as_deref())
-            .filter_map(|package| package.parent())
-            .map(Path::to_path_buf)
-            .filter_map(|path| SystemPathBuf::from_path_buf(path).ok()),
+        src_roots,
         pyproject_config
             .settings
             .analyze
             .target_version
             .as_tuple()
             .into(),
+        args.python
+            .and_then(|python| SystemPathBuf::from_path_buf(python).ok()),
     )?;
 
     let imports = {
@@ -75,7 +86,7 @@ pub(crate) fn analyze_graph(
         // Collect and resolve the imports for each file.
         let result = Arc::new(Mutex::new(Vec::new()));
         let inner_result = Arc::clone(&result);
-        let db = db.snapshot();
+        let db = db.clone();
 
         rayon::scope(move |scope| {
             for resolved_file in paths {
@@ -131,7 +142,7 @@ pub(crate) fn analyze_graph(
                     continue;
                 };
 
-                let db = db.snapshot();
+                let db = db.clone();
                 let glob_resolver = glob_resolver.clone();
                 let root = root.clone();
                 let result = inner_result.clone();

@@ -1,7 +1,7 @@
 use ruff_python_ast::{self as ast, Expr};
 
 use ruff_diagnostics::{Diagnostic, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_text_size::Ranged;
 
 use crate::checkers::ast::Checker;
@@ -25,28 +25,31 @@ enum Kind {
 /// ```python
 /// assert "always true"
 /// ```
-#[violation]
-pub struct AssertOnStringLiteral {
+#[derive(ViolationMetadata)]
+pub(crate) struct AssertOnStringLiteral {
     kind: Kind,
 }
 
 impl Violation for AssertOnStringLiteral {
     #[derive_message_formats]
     fn message(&self) -> String {
-        let AssertOnStringLiteral { kind } = self;
-        match kind {
-            Kind::Empty => format!("Asserting on an empty string literal will never pass"),
-            Kind::NonEmpty => format!("Asserting on a non-empty string literal will always pass"),
-            Kind::Unknown => format!("Asserting on a string literal may have unintended results"),
+        match self.kind {
+            Kind::Empty => "Asserting on an empty string literal will never pass".to_string(),
+            Kind::NonEmpty => {
+                "Asserting on a non-empty string literal will always pass".to_string()
+            }
+            Kind::Unknown => {
+                "Asserting on a string literal may have unintended results".to_string()
+            }
         }
     }
 }
 
 /// PLW0129
-pub(crate) fn assert_on_string_literal(checker: &mut Checker, test: &Expr) {
+pub(crate) fn assert_on_string_literal(checker: &Checker, test: &Expr) {
     match test {
         Expr::StringLiteral(ast::ExprStringLiteral { value, .. }) => {
-            checker.diagnostics.push(Diagnostic::new(
+            checker.report_diagnostic(Diagnostic::new(
                 AssertOnStringLiteral {
                     kind: if value.is_empty() {
                         Kind::Empty
@@ -58,7 +61,7 @@ pub(crate) fn assert_on_string_literal(checker: &mut Checker, test: &Expr) {
             ));
         }
         Expr::BytesLiteral(ast::ExprBytesLiteral { value, .. }) => {
-            checker.diagnostics.push(Diagnostic::new(
+            checker.report_diagnostic(Diagnostic::new(
                 AssertOnStringLiteral {
                     kind: if value.is_empty() {
                         Kind::Empty
@@ -97,7 +100,7 @@ pub(crate) fn assert_on_string_literal(checker: &mut Checker, test: &Expr) {
             } else {
                 Kind::Unknown
             };
-            checker.diagnostics.push(Diagnostic::new(
+            checker.report_diagnostic(Diagnostic::new(
                 AssertOnStringLiteral { kind },
                 test.range(),
             ));

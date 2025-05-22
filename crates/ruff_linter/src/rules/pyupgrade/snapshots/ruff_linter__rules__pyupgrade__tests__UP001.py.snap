@@ -22,7 +22,7 @@ UP001.py:6:5: UP001 [*] `__metaclass__ = type` is implied
 5 | class B:
 6 |     __metaclass__ = type
   |     ^^^^^^^^^^^^^^^^^^^^ UP001
-7 | 
+7 |
 8 |     def __init__(self) -> None:
   |
   = help: Remove `__metaclass__ = type`
@@ -35,5 +35,3 @@ UP001.py:6:5: UP001 [*] `__metaclass__ = type` is implied
 7 6 | 
 8 7 |     def __init__(self) -> None:
 9 8 |         pass
-
-

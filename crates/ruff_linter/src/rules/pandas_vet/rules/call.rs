@@ -1,13 +1,14 @@
 use ruff_python_ast::{self as ast, Expr};
 
+use ruff_diagnostics::Diagnostic;
 use ruff_diagnostics::Violation;
-use ruff_diagnostics::{Diagnostic, DiagnosticKind};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
+use ruff_python_semantic::Modules;
 use ruff_text_size::Ranged;
 
 use crate::checkers::ast::Checker;
 use crate::registry::Rule;
-use crate::rules::pandas_vet::helpers::{test_expression, Resolution};
+use crate::rules::pandas_vet::helpers::{Resolution, test_expression};
 
 /// ## What it does
 /// Checks for uses of `.isnull` on Pandas objects.
@@ -39,13 +40,13 @@ use crate::rules::pandas_vet::helpers::{test_expression, Resolution};
 /// ## References
 /// - [Pandas documentation: `isnull`](https://pandas.pydata.org/docs/reference/api/pandas.isnull.html#pandas.isnull)
 /// - [Pandas documentation: `isna`](https://pandas.pydata.org/docs/reference/api/pandas.isna.html#pandas.isna)
-#[violation]
-pub struct PandasUseOfDotIsNull;
+#[derive(ViolationMetadata)]
+pub(crate) struct PandasUseOfDotIsNull;
 
 impl Violation for PandasUseOfDotIsNull {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("`.isna` is preferred to `.isnull`; functionality is equivalent")
+        "`.isna` is preferred to `.isnull`; functionality is equivalent".to_string()
     }
 }
 
@@ -79,13 +80,13 @@ impl Violation for PandasUseOfDotIsNull {
 /// ## References
 /// - [Pandas documentation: `notnull`](https://pandas.pydata.org/docs/reference/api/pandas.notnull.html#pandas.notnull)
 /// - [Pandas documentation: `notna`](https://pandas.pydata.org/docs/reference/api/pandas.notna.html#pandas.notna)
-#[violation]
-pub struct PandasUseOfDotNotNull;
+#[derive(ViolationMetadata)]
+pub(crate) struct PandasUseOfDotNotNull;
 
 impl Violation for PandasUseOfDotNotNull {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("`.notna` is preferred to `.notnull`; functionality is equivalent")
+        "`.notna` is preferred to `.notnull`; functionality is equivalent".to_string()
     }
 }
 
@@ -115,15 +116,14 @@ impl Violation for PandasUseOfDotNotNull {
 /// ## References
 /// - [Pandas documentation: Reshaping and pivot tables](https://pandas.pydata.org/docs/user_guide/reshaping.html)
 /// - [Pandas documentation: `pivot_table`](https://pandas.pydata.org/docs/reference/api/pandas.pivot_table.html#pandas.pivot_table)
-#[violation]
-pub struct PandasUseOfDotPivotOrUnstack;
+#[derive(ViolationMetadata)]
+pub(crate) struct PandasUseOfDotPivotOrUnstack;
 
 impl Violation for PandasUseOfDotPivotOrUnstack {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!(
-            "`.pivot_table` is preferred to `.pivot` or `.unstack`; provides same functionality"
-        )
+        "`.pivot_table` is preferred to `.pivot` or `.unstack`; provides same functionality"
+            .to_string()
     }
 }
 
@@ -153,26 +153,32 @@ impl Violation for PandasUseOfDotPivotOrUnstack {
 /// ## References
 /// - [Pandas documentation: `melt`](https://pandas.pydata.org/docs/reference/api/pandas.melt.html)
 /// - [Pandas documentation: `stack`](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.stack.html)
-#[violation]
-pub struct PandasUseOfDotStack;
+#[derive(ViolationMetadata)]
+pub(crate) struct PandasUseOfDotStack;
 
 impl Violation for PandasUseOfDotStack {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("`.melt` is preferred to `.stack`; provides same functionality")
+        "`.melt` is preferred to `.stack`; provides same functionality".to_string()
     }
 }
 
-pub(crate) fn call(checker: &mut Checker, func: &Expr) {
+pub(crate) fn call(checker: &Checker, func: &Expr) {
+    if !checker.semantic().seen_module(Modules::PANDAS) {
+        return;
+    }
+
     let Expr::Attribute(ast::ExprAttribute { value, attr, .. }) = func else {
         return;
     };
-    let violation: DiagnosticKind = match attr.as_str() {
+
+    let range = func.range();
+    let diagnostic = match attr.as_str() {
         "isnull" if checker.settings.rules.enabled(Rule::PandasUseOfDotIsNull) => {
-            PandasUseOfDotIsNull.into()
+            Diagnostic::new(PandasUseOfDotIsNull, range)
         }
         "notnull" if checker.settings.rules.enabled(Rule::PandasUseOfDotNotNull) => {
-            PandasUseOfDotNotNull.into()
+            Diagnostic::new(PandasUseOfDotNotNull, range)
         }
         "pivot" | "unstack"
             if checker
@@ -180,10 +186,10 @@ pub(crate) fn call(checker: &mut Checker, func: &Expr) {
                 .rules
                 .enabled(Rule::PandasUseOfDotPivotOrUnstack) =>
         {
-            PandasUseOfDotPivotOrUnstack.into()
+            Diagnostic::new(PandasUseOfDotPivotOrUnstack, range)
         }
         "stack" if checker.settings.rules.enabled(Rule::PandasUseOfDotStack) => {
-            PandasUseOfDotStack.into()
+            Diagnostic::new(PandasUseOfDotStack, range)
         }
         _ => return,
     };
@@ -196,7 +202,5 @@ pub(crate) fn call(checker: &mut Checker, func: &Expr) {
         return;
     }
 
-    checker
-        .diagnostics
-        .push(Diagnostic::new(violation, func.range()));
+    checker.report_diagnostic(diagnostic);
 }

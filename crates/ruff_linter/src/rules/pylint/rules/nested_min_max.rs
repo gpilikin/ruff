@@ -2,7 +2,7 @@ use ruff_python_ast::{self as ast, Arguments, Expr, Keyword};
 use ruff_text_size::{Ranged, TextRange};
 
 use ruff_diagnostics::{Diagnostic, Edit, Fix, FixAvailability, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_semantic::SemanticModel;
 
 use crate::checkers::ast::Checker;
@@ -21,6 +21,7 @@ pub(crate) enum MinMax {
 /// readability.
 ///
 /// ## Example
+///
 /// ```python
 /// minimum = min(1, 2, min(3, 4, 5))
 /// maximum = max(1, 2, max(3, 4, 5))
@@ -28,17 +29,31 @@ pub(crate) enum MinMax {
 /// ```
 ///
 /// Use instead:
+///
 /// ```python
 /// minimum = min(1, 2, 3, 4, 5)
 /// maximum = max(1, 2, 3, 4, 5)
 /// diff = maximum - minimum
 /// ```
 ///
+/// ## Fix safety
+///
+/// This fix is always unsafe and may change the program's behavior for types without full
+/// equivalence relations, such as float comparisons involving `NaN`.
+///
+/// ```python
+/// print(min(2.0, min(float("nan"), 1.0)))  # before fix: 2.0
+/// print(min(2.0, float("nan"), 1.0))  # after fix: 1.0
+///
+/// print(max(1.0, max(float("nan"), 2.0)))  # before fix: 1.0
+/// print(max(1.0, float("nan"), 2.0))  # after fix: 2.0
+/// ```
+///
 /// ## References
 /// - [Python documentation: `min`](https://docs.python.org/3/library/functions.html#min)
 /// - [Python documentation: `max`](https://docs.python.org/3/library/functions.html#max)
-#[violation]
-pub struct NestedMinMax {
+#[derive(ViolationMetadata)]
+pub(crate) struct NestedMinMax {
     func: MinMax,
 }
 
@@ -128,7 +143,7 @@ fn collect_nested_args(min_max: MinMax, args: &[Expr], semantic: &SemanticModel)
 
 /// PLW3301
 pub(crate) fn nested_min_max(
-    checker: &mut Checker,
+    checker: &Checker,
     expr: &Expr,
     func: &Expr,
     args: &[Expr],
@@ -173,6 +188,6 @@ pub(crate) fn nested_min_max(
                 expr.range(),
             )));
         }
-        checker.diagnostics.push(diagnostic);
+        checker.report_diagnostic(diagnostic);
     }
 }

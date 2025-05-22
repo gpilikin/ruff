@@ -1,14 +1,14 @@
 use ruff_diagnostics::{Diagnostic, Edit, Fix, FixAvailability, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::helpers::is_const_true;
 use ruff_python_ast::parenthesize::parenthesized_range;
 use ruff_python_ast::{self as ast, Keyword, Stmt};
 use ruff_python_trivia::CommentRanges;
 use ruff_text_size::Ranged;
 
-use crate::checkers::ast::Checker;
-use crate::fix::edits::{remove_argument, Parentheses};
 use crate::Locator;
+use crate::checkers::ast::Checker;
+use crate::fix::edits::{Parentheses, remove_argument};
 
 /// ## What it does
 /// Checks for `inplace=True` usages in `pandas` function and method
@@ -33,16 +33,16 @@ use crate::Locator;
 /// ```
 ///
 /// ## References
-/// - [_Why You Should Probably Never Use pandas inplace=True_](https://towardsdatascience.com/why-you-should-probably-never-use-pandas-inplace-true-9f9f211849e4)
-#[violation]
-pub struct PandasUseOfInplaceArgument;
+/// - [_Why You Should Probably Never Use pandas `inplace=True`_](https://towardsdatascience.com/why-you-should-probably-never-use-pandas-inplace-true-9f9f211849e4)
+#[derive(ViolationMetadata)]
+pub(crate) struct PandasUseOfInplaceArgument;
 
 impl Violation for PandasUseOfInplaceArgument {
     const FIX_AVAILABILITY: FixAvailability = FixAvailability::Sometimes;
 
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("`inplace=True` should be avoided; it has inconsistent behavior")
+        "`inplace=True` should be avoided; it has inconsistent behavior".to_string()
     }
 
     fn fix_title(&self) -> Option<String> {
@@ -51,7 +51,7 @@ impl Violation for PandasUseOfInplaceArgument {
 }
 
 /// PD002
-pub(crate) fn inplace_argument(checker: &mut Checker, call: &ast::ExprCall) {
+pub(crate) fn inplace_argument(checker: &Checker, call: &ast::ExprCall) {
     // If the function was imported from another module, and it's _not_ Pandas, abort.
     if checker
         .semantic()
@@ -100,7 +100,7 @@ pub(crate) fn inplace_argument(checker: &mut Checker, call: &ast::ExprCall) {
                     }
                 }
 
-                checker.diagnostics.push(diagnostic);
+                checker.report_diagnostic(diagnostic);
             }
 
             // Duplicate keywords is a syntax error, so we can stop here.

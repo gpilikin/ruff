@@ -1,22 +1,22 @@
 use std::sync::LazyLock;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use libcst_native::{Arg, Expression};
 use regex::Regex;
 
 use ruff_diagnostics::{Diagnostic, Edit, Fix, FixAvailability, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::{self as ast, Expr};
 use ruff_python_codegen::Stylist;
 use ruff_text_size::Ranged;
 
+use crate::Locator;
 use crate::checkers::ast::Checker;
 use crate::cst::matchers::{
     match_attribute, match_call_mut, match_expression, transform_expression_text,
 };
 use crate::fix::codemods::CodegenStylist;
 use crate::rules::pyflakes::format::FormatSummary;
-use crate::Locator;
 
 /// ## What it does
 /// Checks for unnecessary positional indices in format strings.
@@ -39,18 +39,22 @@ use crate::Locator;
 /// "{}, {}".format("Hello", "World")  # "Hello, World"
 /// ```
 ///
+/// This fix is marked as unsafe because:
+/// - Comments attached to arguments are not moved, which can cause comments to mismatch the actual arguments.
+/// - If arguments have side effects (e.g., print), reordering may change program behavior.
+///
 /// ## References
 /// - [Python documentation: Format String Syntax](https://docs.python.org/3/library/string.html#format-string-syntax)
 /// - [Python documentation: `str.format`](https://docs.python.org/3/library/stdtypes.html#str.format)
-#[violation]
-pub struct FormatLiterals;
+#[derive(ViolationMetadata)]
+pub(crate) struct FormatLiterals;
 
 impl Violation for FormatLiterals {
     const FIX_AVAILABILITY: FixAvailability = FixAvailability::Sometimes;
 
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("Use implicit references for positional format fields")
+        "Use implicit references for positional format fields".to_string()
     }
 
     fn fix_title(&self) -> Option<String> {
@@ -59,11 +63,7 @@ impl Violation for FormatLiterals {
 }
 
 /// UP030
-pub(crate) fn format_literals(
-    checker: &mut Checker,
-    call: &ast::ExprCall,
-    summary: &FormatSummary,
-) {
+pub(crate) fn format_literals(checker: &Checker, call: &ast::ExprCall, summary: &FormatSummary) {
     // The format we expect is, e.g.: `"{0} {1}".format(...)`
     if summary.has_nested_parts {
         return;
@@ -117,7 +117,7 @@ pub(crate) fn format_literals(
         generate_call(call, arguments, checker.locator(), checker.stylist())
             .map(|suggestion| Fix::unsafe_edit(Edit::range_replacement(suggestion, call.range())))
     });
-    checker.diagnostics.push(diagnostic);
+    checker.report_diagnostic(diagnostic);
 }
 
 /// Returns true if the indices are sequential.

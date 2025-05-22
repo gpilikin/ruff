@@ -95,8 +95,6 @@ B034.py:14:1: B034 `re.sub` should pass `count` and `flags` as keyword arguments
 13 | re.split(" ", "a a a a", 2, re.I)
 14 | sub("a", "b", "aaa", re.IGNORECASE)
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ B034
-15 | 
+15 |
 16 | # OK
    |
-
-

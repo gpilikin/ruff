@@ -48,7 +48,7 @@ ignore_variadic_names.py:10:20: ARG002 Unused method argument: `b`
 ignore_variadic_names.py:13:17: ARG002 Unused method argument: `a`
    |
 11 |         print("Hello, world!")
-12 | 
+12 |
 13 |     def f(self, a, b, *args, **kwargs):
    |                 ^ ARG002
 14 |         print("Hello, world!")
@@ -57,10 +57,8 @@ ignore_variadic_names.py:13:17: ARG002 Unused method argument: `a`
 ignore_variadic_names.py:13:20: ARG002 Unused method argument: `b`
    |
 11 |         print("Hello, world!")
-12 | 
+12 |
 13 |     def f(self, a, b, *args, **kwargs):
    |                    ^ ARG002
 14 |         print("Hello, world!")
    |
-
-

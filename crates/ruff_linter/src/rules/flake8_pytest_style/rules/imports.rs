@@ -1,7 +1,7 @@
 use ruff_python_ast::Stmt;
 
 use ruff_diagnostics::{Diagnostic, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_text_size::Ranged;
 
 /// ## What it does
@@ -21,13 +21,13 @@ use ruff_text_size::Ranged;
 /// ```python
 /// import pytest
 /// ```
-#[violation]
-pub struct PytestIncorrectPytestImport;
+#[derive(ViolationMetadata)]
+pub(crate) struct PytestIncorrectPytestImport;
 
 impl Violation for PytestIncorrectPytestImport {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("Incorrect import of `pytest`; use `import pytest` instead")
+        "Incorrect import of `pytest`; use `import pytest` instead".to_string()
     }
 }
 
@@ -59,7 +59,7 @@ pub(crate) fn import_from(
     // If level is not zero or module is none, return
     if level != 0 {
         return None;
-    };
+    }
 
     if let Some(module) = module {
         if is_pytest_or_subpackage(module) {
@@ -68,7 +68,7 @@ pub(crate) fn import_from(
                 import_from.range(),
             ));
         }
-    };
+    }
 
     None
 }

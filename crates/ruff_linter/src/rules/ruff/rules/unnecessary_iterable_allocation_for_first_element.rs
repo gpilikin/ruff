@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use ruff_diagnostics::{AlwaysFixableViolation, Diagnostic, Edit, Fix};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::{self as ast, Arguments, Comprehension, Expr, Int};
 use ruff_python_semantic::SemanticModel;
 use ruff_python_stdlib::builtins::is_iterator;
@@ -53,7 +53,7 @@ use crate::fix::snippet::SourceCodeSnippet;
 ///
 /// ## References
 /// - [Iterators and Iterables in Python: Run Efficient Iterations](https://realpython.com/python-iterators-iterables/#when-to-use-an-iterator-in-python)
-#[violation]
+#[derive(ViolationMetadata)]
 pub(crate) struct UnnecessaryIterableAllocationForFirstElement {
     iterable: SourceCodeSnippet,
 }
@@ -61,23 +61,18 @@ pub(crate) struct UnnecessaryIterableAllocationForFirstElement {
 impl AlwaysFixableViolation for UnnecessaryIterableAllocationForFirstElement {
     #[derive_message_formats]
     fn message(&self) -> String {
-        let UnnecessaryIterableAllocationForFirstElement { iterable } = self;
-        let iterable = iterable.truncated_display();
+        let iterable = &self.iterable.truncated_display();
         format!("Prefer `next({iterable})` over single element slice")
     }
 
     fn fix_title(&self) -> String {
-        let UnnecessaryIterableAllocationForFirstElement { iterable } = self;
-        let iterable = iterable.truncated_display();
+        let iterable = &self.iterable.truncated_display();
         format!("Replace with `next({iterable})`")
     }
 }
 
 /// RUF015
-pub(crate) fn unnecessary_iterable_allocation_for_first_element(
-    checker: &mut Checker,
-    expr: &Expr,
-) {
+pub(crate) fn unnecessary_iterable_allocation_for_first_element(checker: &Checker, expr: &Expr) {
     let value = match expr {
         // Ex) `list(x)[0]`
         Expr::Subscript(ast::ExprSubscript { value, slice, .. }) => {
@@ -132,7 +127,7 @@ pub(crate) fn unnecessary_iterable_allocation_for_first_element(
         expr.range(),
     )));
 
-    checker.diagnostics.push(diagnostic);
+    checker.report_diagnostic(diagnostic);
 }
 
 /// Check that the slice [`Expr`] is a slice of the first element (e.g., `x[0]`).
@@ -268,9 +263,11 @@ fn match_iteration_target(expr: &Expr, semantic: &SemanticModel) -> Option<Itera
 /// Returns the [`Expr`] target for a comprehension, if the comprehension is "simple"
 /// (e.g., `x` for `[i for i in x]`).
 fn match_simple_comprehension(elt: &Expr, generators: &[Comprehension]) -> Option<TextRange> {
-    let [generator @ Comprehension {
-        is_async: false, ..
-    }] = generators
+    let [
+        generator @ Comprehension {
+            is_async: false, ..
+        },
+    ] = generators
     else {
         return None;
     };

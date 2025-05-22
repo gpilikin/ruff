@@ -8,7 +8,7 @@ S110.py:3:1: S110 `try`-`except`-`pass` detected, consider logging the exception
 3 | / except Exception:
 4 | |     pass
   | |________^ S110
-5 |   
+5 |
 6 |   try:
   |
 
@@ -19,7 +19,7 @@ S110.py:8:1: S110 `try`-`except`-`pass` detected, consider logging the exception
  8 | / except:
  9 | |     pass
    | |________^ S110
-10 |   
+10 |
 11 |   try:
    |
 
@@ -31,5 +31,3 @@ S110.py:13:1: S110 `try`-`except`-`pass` detected, consider logging the exceptio
 14 | |     pass
    | |________^ S110
    |
-
-

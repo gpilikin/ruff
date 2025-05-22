@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use ruff_diagnostics::{AlwaysFixableViolation, FixAvailability, Violation};
 use ruff_diagnostics::{Diagnostic, Edit, Fix};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::helpers::{is_const_false, is_const_true};
 use ruff_python_ast::stmt_if::elif_else_range;
 use ruff_python_ast::visitor::Visitor;
@@ -12,18 +12,19 @@ use ruff_python_ast::whitespace::indentation;
 use ruff_python_ast::{self as ast, Decorator, ElifElseClause, Expr, Stmt};
 use ruff_python_codegen::Stylist;
 use ruff_python_index::Indexer;
-use ruff_python_semantic::analyze::visibility::is_property;
 use ruff_python_semantic::SemanticModel;
-use ruff_python_trivia::{is_python_whitespace, SimpleTokenKind, SimpleTokenizer};
+use ruff_python_semantic::analyze::visibility::is_property;
+use ruff_python_trivia::{SimpleTokenKind, SimpleTokenizer, is_python_whitespace};
 use ruff_source_file::LineRanges;
 use ruff_text_size::{Ranged, TextRange, TextSize};
 
+use crate::Locator;
 use crate::checkers::ast::Checker;
 use crate::fix::edits;
 use crate::fix::edits::adjust_indentation;
+use crate::preview::is_only_add_return_none_at_end_enabled;
 use crate::registry::{AsRule, Rule};
 use crate::rules::flake8_return::helpers::end_of_last_statement;
-use crate::Locator;
 
 use super::super::branch::Branch;
 use super::super::helpers::result_exists;
@@ -54,15 +55,14 @@ use super::super::visitor::{ReturnVisitor, Stack};
 ///         return
 ///     return
 /// ```
-#[violation]
-pub struct UnnecessaryReturnNone;
+#[derive(ViolationMetadata)]
+pub(crate) struct UnnecessaryReturnNone;
 
 impl AlwaysFixableViolation for UnnecessaryReturnNone {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!(
-            "Do not explicitly `return None` in function if it is the only possible return value"
-        )
+        "Do not explicitly `return None` in function if it is the only possible return value"
+            .to_string()
     }
 
     fn fix_title(&self) -> String {
@@ -96,13 +96,13 @@ impl AlwaysFixableViolation for UnnecessaryReturnNone {
 ///         return None
 ///     return 1
 /// ```
-#[violation]
-pub struct ImplicitReturnValue;
+#[derive(ViolationMetadata)]
+pub(crate) struct ImplicitReturnValue;
 
 impl AlwaysFixableViolation for ImplicitReturnValue {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("Do not implicitly `return None` in function able to return non-`None` value")
+        "Do not implicitly `return None` in function able to return non-`None` value".to_string()
     }
 
     fn fix_title(&self) -> String {
@@ -134,13 +134,14 @@ impl AlwaysFixableViolation for ImplicitReturnValue {
 ///         return 1
 ///     return None
 /// ```
-#[violation]
-pub struct ImplicitReturn;
+#[derive(ViolationMetadata)]
+pub(crate) struct ImplicitReturn;
 
 impl AlwaysFixableViolation for ImplicitReturn {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("Missing explicit `return` at the end of function able to return non-`None` value")
+        "Missing explicit `return` at the end of function able to return non-`None` value"
+            .to_string()
     }
 
     fn fix_title(&self) -> String {
@@ -168,8 +169,8 @@ impl AlwaysFixableViolation for ImplicitReturn {
 /// def foo():
 ///     return 1
 /// ```
-#[violation]
-pub struct UnnecessaryAssign {
+#[derive(ViolationMetadata)]
+pub(crate) struct UnnecessaryAssign {
     name: String,
 }
 
@@ -210,8 +211,8 @@ impl AlwaysFixableViolation for UnnecessaryAssign {
 ///         return 1
 ///     return baz
 /// ```
-#[violation]
-pub struct SuperfluousElseReturn {
+#[derive(ViolationMetadata)]
+pub(crate) struct SuperfluousElseReturn {
     branch: Branch,
 }
 
@@ -254,8 +255,8 @@ impl Violation for SuperfluousElseReturn {
 ///         raise Exception(bar)
 ///     raise Exception(baz)
 /// ```
-#[violation]
-pub struct SuperfluousElseRaise {
+#[derive(ViolationMetadata)]
+pub(crate) struct SuperfluousElseRaise {
     branch: Branch,
 }
 
@@ -300,8 +301,8 @@ impl Violation for SuperfluousElseRaise {
 ///             continue
 ///         x = 0
 /// ```
-#[violation]
-pub struct SuperfluousElseContinue {
+#[derive(ViolationMetadata)]
+pub(crate) struct SuperfluousElseContinue {
     branch: Branch,
 }
 
@@ -346,8 +347,8 @@ impl Violation for SuperfluousElseContinue {
 ///             break
 ///         x = 0
 /// ```
-#[violation]
-pub struct SuperfluousElseBreak {
+#[derive(ViolationMetadata)]
+pub(crate) struct SuperfluousElseBreak {
     branch: Branch,
 }
 
@@ -366,7 +367,7 @@ impl Violation for SuperfluousElseBreak {
 }
 
 /// RET501
-fn unnecessary_return_none(checker: &mut Checker, decorator_list: &[Decorator], stack: &Stack) {
+fn unnecessary_return_none(checker: &Checker, decorator_list: &[Decorator], stack: &Stack) {
     for stmt in &stack.returns {
         let Some(expr) = stmt.value.as_deref() else {
             continue;
@@ -389,12 +390,12 @@ fn unnecessary_return_none(checker: &mut Checker, decorator_list: &[Decorator], 
             "return".to_string(),
             stmt.range(),
         )));
-        checker.diagnostics.push(diagnostic);
+        checker.report_diagnostic(diagnostic);
     }
 }
 
 /// RET502
-fn implicit_return_value(checker: &mut Checker, stack: &Stack) {
+fn implicit_return_value(checker: &Checker, stack: &Stack) {
     for stmt in &stack.returns {
         if stmt.value.is_some() {
             continue;
@@ -404,7 +405,7 @@ fn implicit_return_value(checker: &mut Checker, stack: &Stack) {
             "return None".to_string(),
             stmt.range(),
         )));
-        checker.diagnostics.push(diagnostic);
+        checker.report_diagnostic(diagnostic);
     }
 }
 
@@ -450,9 +451,10 @@ fn is_noreturn_func(func: &Expr, semantic: &SemanticModel) -> bool {
     };
 
     semantic.match_typing_qualified_name(&qualified_name, "NoReturn")
+        || semantic.match_typing_qualified_name(&qualified_name, "Never")
 }
 
-fn add_return_none(checker: &mut Checker, stmt: &Stmt, range: TextRange) {
+fn add_return_none(checker: &Checker, stmt: &Stmt, range: TextRange) {
     let mut diagnostic = Diagnostic::new(ImplicitReturn, range);
     if let Some(indent) = indentation(checker.source(), stmt) {
         let mut content = String::new();
@@ -464,7 +466,7 @@ fn add_return_none(checker: &mut Checker, stmt: &Stmt, range: TextRange) {
             end_of_last_statement(stmt, checker.locator()),
         )));
     }
-    checker.diagnostics.push(diagnostic);
+    checker.report_diagnostic(diagnostic);
 }
 
 /// Returns a list of all implicit returns in the given statement.
@@ -544,14 +546,14 @@ fn implicit_returns<'a>(checker: &Checker, stmt: &'a Stmt) -> Vec<&'a Stmt> {
 }
 
 /// RET503
-fn implicit_return(checker: &mut Checker, function_def: &ast::StmtFunctionDef, stmt: &Stmt) {
+fn implicit_return(checker: &Checker, function_def: &ast::StmtFunctionDef, stmt: &Stmt) {
     let implicit_stmts = implicit_returns(checker, stmt);
 
     if implicit_stmts.is_empty() {
         return;
     }
 
-    if checker.settings.preview.is_enabled() {
+    if is_only_add_return_none_at_end_enabled(checker.settings) {
         add_return_none(checker, stmt, function_def.range());
     } else {
         for implicit_stmt in implicit_stmts {
@@ -561,7 +563,7 @@ fn implicit_return(checker: &mut Checker, function_def: &ast::StmtFunctionDef, s
 }
 
 /// RET504
-fn unnecessary_assign(checker: &mut Checker, stack: &Stack) {
+fn unnecessary_assign(checker: &Checker, stack: &Stack) {
     for (assign, return_, stmt) in &stack.assignment_return {
         // Identify, e.g., `return x`.
         let Some(value) = return_.value.as_ref() else {
@@ -650,13 +652,13 @@ fn unnecessary_assign(checker: &mut Checker, stack: &Stack) {
 
             Ok(Fix::unsafe_edits(replace_assign, [delete_return]))
         });
-        checker.diagnostics.push(diagnostic);
+        checker.report_diagnostic(diagnostic);
     }
 }
 
 /// RET505, RET506, RET507, RET508
 fn superfluous_else_node(
-    checker: &mut Checker,
+    checker: &Checker,
     if_elif_body: &[Stmt],
     elif_else: &ElifElseClause,
 ) -> bool {
@@ -672,7 +674,7 @@ fn superfluous_else_node(
                 elif_else_range(elif_else, checker.locator().contents())
                     .unwrap_or_else(|| elif_else.range()),
             );
-            if checker.enabled(diagnostic.kind.rule()) {
+            if checker.enabled(diagnostic.rule()) {
                 diagnostic.try_set_fix(|| {
                     remove_else(
                         elif_else,
@@ -681,7 +683,7 @@ fn superfluous_else_node(
                         checker.stylist(),
                     )
                 });
-                checker.diagnostics.push(diagnostic);
+                checker.report_diagnostic(diagnostic);
             }
             return true;
         } else if child.is_break_stmt() {
@@ -690,7 +692,7 @@ fn superfluous_else_node(
                 elif_else_range(elif_else, checker.locator().contents())
                     .unwrap_or_else(|| elif_else.range()),
             );
-            if checker.enabled(diagnostic.kind.rule()) {
+            if checker.enabled(diagnostic.rule()) {
                 diagnostic.try_set_fix(|| {
                     remove_else(
                         elif_else,
@@ -700,7 +702,7 @@ fn superfluous_else_node(
                     )
                 });
 
-                checker.diagnostics.push(diagnostic);
+                checker.report_diagnostic(diagnostic);
             }
             return true;
         } else if child.is_raise_stmt() {
@@ -709,7 +711,7 @@ fn superfluous_else_node(
                 elif_else_range(elif_else, checker.locator().contents())
                     .unwrap_or_else(|| elif_else.range()),
             );
-            if checker.enabled(diagnostic.kind.rule()) {
+            if checker.enabled(diagnostic.rule()) {
                 diagnostic.try_set_fix(|| {
                     remove_else(
                         elif_else,
@@ -719,7 +721,7 @@ fn superfluous_else_node(
                     )
                 });
 
-                checker.diagnostics.push(diagnostic);
+                checker.report_diagnostic(diagnostic);
             }
             return true;
         } else if child.is_continue_stmt() {
@@ -728,7 +730,7 @@ fn superfluous_else_node(
                 elif_else_range(elif_else, checker.locator().contents())
                     .unwrap_or_else(|| elif_else.range()),
             );
-            if checker.enabled(diagnostic.kind.rule()) {
+            if checker.enabled(diagnostic.rule()) {
                 diagnostic.try_set_fix(|| {
                     remove_else(
                         elif_else,
@@ -738,7 +740,7 @@ fn superfluous_else_node(
                     )
                 });
 
-                checker.diagnostics.push(diagnostic);
+                checker.report_diagnostic(diagnostic);
             }
             return true;
         }
@@ -747,14 +749,14 @@ fn superfluous_else_node(
 }
 
 /// RET505, RET506, RET507, RET508
-fn superfluous_elif_else(checker: &mut Checker, stack: &Stack) {
+fn superfluous_elif_else(checker: &Checker, stack: &Stack) {
     for (if_elif_body, elif_else) in &stack.elifs_elses {
         superfluous_else_node(checker, if_elif_body, elif_else);
     }
 }
 
 /// Run all checks from the `flake8-return` plugin.
-pub(crate) fn function(checker: &mut Checker, function_def: &ast::StmtFunctionDef) {
+pub(crate) fn function(checker: &Checker, function_def: &ast::StmtFunctionDef) {
     let ast::StmtFunctionDef {
         decorator_list,
         returns,
@@ -816,7 +818,7 @@ pub(crate) fn function(checker: &mut Checker, function_def: &ast::StmtFunctionDe
     } else {
         if checker.enabled(Rule::UnnecessaryReturnNone) {
             // Skip functions that have a return annotation that is not `None`.
-            if returns.as_deref().map_or(true, Expr::is_none_literal_expr) {
+            if returns.as_deref().is_none_or(Expr::is_none_literal_expr) {
                 unnecessary_return_none(checker, decorator_list, &stack);
             }
         }

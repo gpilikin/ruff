@@ -1,7 +1,7 @@
 use ruff_diagnostics::{Diagnostic, Violation};
-use ruff_macros::{derive_message_formats, violation};
-use ruff_python_ast::helpers::contains_effect;
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::Expr;
+use ruff_python_ast::helpers::contains_effect;
 use ruff_text_size::Ranged;
 
 use crate::checkers::ast::Checker;
@@ -50,8 +50,8 @@ use super::super::helpers::at_last_top_level_expression_in_cell;
 /// with errors.ExceptionRaisedContext():
 ///     _ = obj.attribute
 /// ```
-#[violation]
-pub struct UselessExpression {
+#[derive(ViolationMetadata)]
+pub(crate) struct UselessExpression {
     kind: Kind,
 }
 
@@ -60,19 +60,18 @@ impl Violation for UselessExpression {
     fn message(&self) -> String {
         match self.kind {
             Kind::Expression => {
-                format!("Found useless expression. Either assign it to a variable or remove it.")
+                "Found useless expression. Either assign it to a variable or remove it.".to_string()
             }
             Kind::Attribute => {
-                format!(
-                    "Found useless attribute access. Either assign it to a variable or remove it."
-                )
+                "Found useless attribute access. Either assign it to a variable or remove it."
+                    .to_string()
             }
         }
     }
 }
 
 /// B018
-pub(crate) fn useless_expression(checker: &mut Checker, value: &Expr) {
+pub(crate) fn useless_expression(checker: &Checker, value: &Expr) {
     // Ignore comparisons, as they're handled by `useless_comparison`.
     if value.is_compare_expr() {
         return;
@@ -101,7 +100,7 @@ pub(crate) fn useless_expression(checker: &mut Checker, value: &Expr) {
         // Flag attributes as useless expressions, even if they're attached to calls or other
         // expressions.
         if value.is_attribute_expr() {
-            checker.diagnostics.push(Diagnostic::new(
+            checker.report_diagnostic(Diagnostic::new(
                 UselessExpression {
                     kind: Kind::Attribute,
                 },
@@ -111,7 +110,7 @@ pub(crate) fn useless_expression(checker: &mut Checker, value: &Expr) {
         return;
     }
 
-    checker.diagnostics.push(Diagnostic::new(
+    checker.report_diagnostic(Diagnostic::new(
         UselessExpression {
             kind: Kind::Expression,
         },

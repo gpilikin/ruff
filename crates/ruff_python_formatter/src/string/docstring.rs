@@ -10,22 +10,19 @@ use itertools::Itertools;
 use regex::Regex;
 
 use ruff_formatter::printer::SourceMapGeneration;
-use ruff_python_ast::{str::Quote, AnyStringFlags, StringFlags};
+use ruff_python_ast::{AnyStringFlags, StringFlags, str::Quote};
+use ruff_python_parser::ParseOptions;
 use ruff_python_trivia::CommentRanges;
 use {
-    ruff_formatter::{write, FormatOptions, IndentStyle, LineWidth, Printed},
-    ruff_python_trivia::{is_python_whitespace, PythonWhitespace},
+    ruff_formatter::{FormatOptions, IndentStyle, LineWidth, Printed, write},
+    ruff_python_trivia::{PythonWhitespace, is_python_whitespace},
     ruff_text_size::{Ranged, TextLen, TextRange, TextSize},
 };
 
-use crate::preview::{
-    is_docstring_code_block_in_docstring_indent_enabled,
-    is_join_implicit_concatenated_string_enabled,
-};
-use crate::string::StringQuotes;
-use crate::{prelude::*, DocstringCodeLineWidth, FormatModuleError};
-
 use super::NormalizedString;
+use crate::preview::is_no_chaperone_for_escaped_quote_in_triple_quoted_docstring_enabled;
+use crate::string::StringQuotes;
+use crate::{DocstringCodeLineWidth, FormatModuleError, prelude::*};
 
 /// Format a docstring by trimming whitespace and adjusting the indentation.
 ///
@@ -267,7 +264,7 @@ struct DocstringLinePrinter<'ast, 'buf, 'fmt, 'src> {
     code_example: CodeExample<'src>,
 }
 
-impl<'ast, 'buf, 'fmt, 'src> DocstringLinePrinter<'ast, 'buf, 'fmt, 'src> {
+impl<'src> DocstringLinePrinter<'_, '_, '_, 'src> {
     /// Print all of the lines in the given iterator to this
     /// printer's formatter.
     ///
@@ -462,7 +459,7 @@ impl<'ast, 'buf, 'fmt, 'src> DocstringLinePrinter<'ast, 'buf, 'fmt, 'src> {
                 Indentation::from_str(trim_end).columns() - self.stripped_indentation.columns();
             let in_docstring_indent = " ".repeat(indent_len) + trim_end.trim_start();
             text(&in_docstring_indent).fmt(self.f)?;
-        };
+        }
 
         // We handled the case that the closing quotes are on their own line
         // above (the last line is empty except for whitespace). If they are on
@@ -496,8 +493,6 @@ impl<'ast, 'buf, 'fmt, 'src> DocstringLinePrinter<'ast, 'buf, 'fmt, 'src> {
         &mut self,
         kind: &mut CodeExampleKind<'_>,
     ) -> FormatResult<Option<Vec<OutputDocstringLine<'static>>>> {
-        use ruff_python_parser::AsMode;
-
         let line_width = match self.f.options().docstring_code_line_width() {
             DocstringCodeLineWidth::Fixed(width) => width,
             DocstringCodeLineWidth::Dynamic => {
@@ -508,17 +503,15 @@ impl<'ast, 'buf, 'fmt, 'src> DocstringLinePrinter<'ast, 'buf, 'fmt, 'src> {
                     .to_ascii_spaces(indent_width)
                     .saturating_add(kind.extra_indent_ascii_spaces());
 
-                if is_docstring_code_block_in_docstring_indent_enabled(self.f.context()) {
-                    // Add the in-docstring indentation
-                    current_indent = current_indent.saturating_add(
-                        u16::try_from(
-                            kind.indent()
-                                .columns()
-                                .saturating_sub(self.stripped_indentation.columns()),
-                        )
-                        .unwrap_or(u16::MAX),
-                    );
-                }
+                // Add the in-docstring indentation
+                current_indent = current_indent.saturating_add(
+                    u16::try_from(
+                        kind.indent()
+                            .columns()
+                            .saturating_sub(self.stripped_indentation.columns()),
+                    )
+                    .unwrap_or(u16::MAX),
+                );
 
                 let width = std::cmp::max(1, global_line_width.saturating_sub(current_indent));
                 LineWidth::try_from(width).expect("width should be capped at a minimum of 1")
@@ -576,7 +569,8 @@ impl<'ast, 'buf, 'fmt, 'src> DocstringLinePrinter<'ast, 'buf, 'fmt, 'src> {
                 std::format!(r#""""{}""""#, printed.as_code())
             }
         };
-        let result = ruff_python_parser::parse(&wrapped, self.f.options().source_type().as_mode());
+        let result =
+            ruff_python_parser::parse(&wrapped, ParseOptions::from(self.f.options().source_type()));
         // If the resulting code is not valid, then reset and pass through
         // the docstring lines as-is.
         if result.is_err() {
@@ -665,7 +659,7 @@ struct OutputDocstringLine<'src> {
     is_last: bool,
 }
 
-impl<'src> OutputDocstringLine<'src> {
+impl OutputDocstringLine<'_> {
     /// Return this reformatted line, but with the given function applied to
     /// the text of the line.
     fn map(self, mut map: impl FnMut(&str) -> String) -> OutputDocstringLine<'static> {
@@ -1026,7 +1020,7 @@ impl<'src> CodeExampleRst<'src> {
     ///
     /// [literal block]: https://docutils.sourceforge.io/docs/ref/rst/restructuredtext.html#literal-blocks
     /// [code block directive]: https://www.sphinx-doc.org/en/master/usage/restructuredtext/directives.html#directive-code-block
-    fn new(original: InputDocstringLine<'src>) -> Option<CodeExampleRst> {
+    fn new(original: InputDocstringLine<'src>) -> Option<CodeExampleRst<'src>> {
         let (opening_indent, rest) = indent_with_suffix(original.line);
         if rest.starts_with(".. ") {
             if let Some(litblock) = CodeExampleRst::new_code_block(original) {
@@ -1061,7 +1055,7 @@ impl<'src> CodeExampleRst<'src> {
     /// Attempts to create a new reStructuredText code example from a
     /// `code-block` or `sourcecode` directive. If one couldn't be found, then
     /// `None` is returned.
-    fn new_code_block(original: InputDocstringLine<'src>) -> Option<CodeExampleRst> {
+    fn new_code_block(original: InputDocstringLine<'src>) -> Option<CodeExampleRst<'src>> {
         // This regex attempts to parse the start of a reStructuredText code
         // block [directive]. From the reStructuredText spec:
         //
@@ -1586,10 +1580,8 @@ fn docstring_format_source(
     docstring_quote_style: Quote,
     source: &str,
 ) -> Result<Printed, FormatModuleError> {
-    use ruff_python_parser::AsMode;
-
     let source_type = options.source_type();
-    let parsed = ruff_python_parser::parse(source, source_type.as_mode())?;
+    let parsed = ruff_python_parser::parse(source, ParseOptions::from(source_type))?;
     let comment_ranges = CommentRanges::from(parsed.tokens());
     let source_code = ruff_formatter::SourceCode::new(source);
     let comments = crate::Comments::from_ast(parsed.syntax(), source_code, &comment_ranges);
@@ -1604,21 +1596,43 @@ fn docstring_format_source(
     Ok(formatted.print()?)
 }
 
-/// If the last line of the docstring is `content" """` or `content\ """`, we need a chaperone space
-/// that avoids `content""""` and `content\"""`. This does only applies to un-escaped backslashes,
-/// so `content\\ """` doesn't need a space while `content\\\ """` does.
+/// If the last line of the docstring is `content""""` or `content\"""`, we need a chaperone space
+/// that avoids `content""""` and `content\"""`. This only applies to un-escaped backslashes,
+/// so `content\\"""` doesn't need a space while `content\\\"""` does.
 pub(super) fn needs_chaperone_space(
     flags: AnyStringFlags,
     trim_end: &str,
     context: &PyFormatContext,
 ) -> bool {
-    if trim_end.chars().rev().take_while(|c| *c == '\\').count() % 2 == 1 {
-        true
-    } else if is_join_implicit_concatenated_string_enabled(context) {
-        flags.is_triple_quoted() && trim_end.ends_with(flags.quote_style().as_char())
-    } else {
-        trim_end.ends_with(flags.quote_style().as_char())
+    if count_consecutive_chars_from_end(trim_end, '\\') % 2 == 1 {
+        // Odd backslash count; chaperone avoids escaping closing quotes
+        // `"\ "` -> prevent that this becomes `"\"` which escapes the closing quote.
+        return true;
     }
+
+    if is_no_chaperone_for_escaped_quote_in_triple_quoted_docstring_enabled(context) {
+        if flags.is_triple_quoted() {
+            if let Some(before_quote) = trim_end.strip_suffix(flags.quote_style().as_char()) {
+                if count_consecutive_chars_from_end(before_quote, '\\') % 2 == 0 {
+                    // Even backslash count preceding quote;
+                    // ```py
+                    // """a "  """
+                    // """a \\"  """
+                    // ```
+                    // The chaperon is needed or the triple quoted string "ends" with 4 instead of 3 quotes.
+                    return true;
+                }
+            }
+        }
+
+        false
+    } else {
+        flags.is_triple_quoted() && trim_end.ends_with(flags.quote_style().as_char())
+    }
+}
+
+fn count_consecutive_chars_from_end(s: &str, target: char) -> usize {
+    s.chars().rev().take_while(|c| *c == target).count()
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -1782,7 +1796,7 @@ impl Indentation {
                     }),
 
                     _ => None,
-                }
+                };
             }
             Self::Mixed { .. } => return None,
         };

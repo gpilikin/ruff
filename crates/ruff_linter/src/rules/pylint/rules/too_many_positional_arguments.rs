@@ -1,5 +1,5 @@
 use ruff_diagnostics::{Diagnostic, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::{self as ast, identifier::Identifier};
 use ruff_python_semantic::analyze::{function_type, visibility};
 
@@ -41,8 +41,8 @@ use crate::checkers::ast::Checker;
 ///
 /// ## Options
 /// - `lint.pylint.max-positional-args`
-#[violation]
-pub struct TooManyPositionalArguments {
+#[derive(ViolationMetadata)]
+pub(crate) struct TooManyPositionalArguments {
     c_pos: usize,
     max_pos: usize,
 }
@@ -57,9 +57,13 @@ impl Violation for TooManyPositionalArguments {
 
 /// PLR0917
 pub(crate) fn too_many_positional_arguments(
-    checker: &mut Checker,
+    checker: &Checker,
     function_def: &ast::StmtFunctionDef,
 ) {
+    // https://github.com/astral-sh/ruff/issues/14535
+    if checker.source_type.is_stub() {
+        return;
+    }
     let semantic = checker.semantic();
 
     // Count the number of positional arguments.
@@ -68,12 +72,7 @@ pub(crate) fn too_many_positional_arguments(
         .posonlyargs
         .iter()
         .chain(&function_def.parameters.args)
-        .filter(|param| {
-            !checker
-                .settings
-                .dummy_variable_rgx
-                .is_match(&param.parameter.name)
-        })
+        .filter(|param| !checker.settings.dummy_variable_rgx.is_match(param.name()))
         .count();
 
     if num_positional_args <= checker.settings.pylint.max_positional_args {
@@ -98,7 +97,9 @@ pub(crate) fn too_many_positional_arguments(
             &checker.settings.pep8_naming.classmethod_decorators,
             &checker.settings.pep8_naming.staticmethod_decorators,
         ),
-        function_type::FunctionType::Method | function_type::FunctionType::ClassMethod
+        function_type::FunctionType::Method
+            | function_type::FunctionType::ClassMethod
+            | function_type::FunctionType::NewMethod
     ) {
         // If so, we need to subtract one from the number of positional arguments, since the first
         // argument is always `self` or `cls`.
@@ -111,7 +112,7 @@ pub(crate) fn too_many_positional_arguments(
         return;
     }
 
-    checker.diagnostics.push(Diagnostic::new(
+    checker.report_diagnostic(Diagnostic::new(
         TooManyPositionalArguments {
             c_pos: num_positional_args,
             max_pos: checker.settings.pylint.max_positional_args,

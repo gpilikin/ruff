@@ -1,17 +1,17 @@
 use std::borrow::Cow;
 
 use ruff_diagnostics::{Applicability, Diagnostic, Edit, Fix, FixAvailability, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast as ast;
+use ruff_python_ast::Expr;
 use ruff_python_ast::comparable::ComparableExpr;
 use ruff_python_ast::helpers::contains_effect;
 use ruff_python_ast::parenthesize::parenthesized_range;
-use ruff_python_ast::Expr;
 use ruff_python_trivia::CommentRanges;
 use ruff_text_size::Ranged;
 
-use crate::checkers::ast::Checker;
 use crate::Locator;
+use crate::checkers::ast::Checker;
 
 /// ## What it does
 /// Checks for ternary `if` expressions that can be replaced with the `or`
@@ -38,24 +38,24 @@ use crate::Locator;
 /// For example, `foo` will be called twice in `foo() if foo() else bar()`
 /// (assuming `foo()` returns a truthy value), but only once in
 /// `foo() or bar()`.
-#[violation]
-pub struct IfExpInsteadOfOrOperator;
+#[derive(ViolationMetadata)]
+pub(crate) struct IfExpInsteadOfOrOperator;
 
 impl Violation for IfExpInsteadOfOrOperator {
     const FIX_AVAILABILITY: FixAvailability = FixAvailability::Sometimes;
 
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("Replace ternary `if` expression with `or` operator")
+        "Replace ternary `if` expression with `or` operator".to_string()
     }
 
     fn fix_title(&self) -> Option<String> {
-        Some(format!("Replace with `or` operator"))
+        Some("Replace with `or` operator".to_string())
     }
 }
 
 /// FURB110
-pub(crate) fn if_exp_instead_of_or_operator(checker: &mut Checker, if_expr: &ast::ExprIf) {
+pub(crate) fn if_exp_instead_of_or_operator(checker: &Checker, if_expr: &ast::ExprIf) {
     let ast::ExprIf {
         test,
         body,
@@ -86,7 +86,7 @@ pub(crate) fn if_exp_instead_of_or_operator(checker: &mut Checker, if_expr: &ast
         },
     ));
 
-    checker.diagnostics.push(diagnostic);
+    checker.report_diagnostic(diagnostic);
 }
 
 /// Parenthesize an expression for use in an `or` operator (e.g., parenthesize `x` in `x or y`),

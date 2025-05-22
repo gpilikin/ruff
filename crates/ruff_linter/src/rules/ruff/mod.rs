@@ -10,31 +10,46 @@ mod tests {
     use std::path::Path;
 
     use anyhow::Result;
+    use regex::Regex;
+    use ruff_python_ast::PythonVersion;
+    use ruff_source_file::SourceFileBuilder;
     use rustc_hash::FxHashSet;
     use test_case::test_case;
 
-    use ruff_source_file::SourceFileBuilder;
-
     use crate::pyproject_toml::lint_pyproject_toml;
     use crate::registry::Rule;
-    use crate::settings::types::{
-        CompiledPerFileIgnoreList, PerFileIgnore, PreviewMode, PythonVersion,
-    };
     use crate::settings::LinterSettings;
+    use crate::settings::types::{CompiledPerFileIgnoreList, PerFileIgnore, PreviewMode};
     use crate::test::{test_path, test_resource_path};
     use crate::{assert_messages, settings};
 
-    #[test_case(Rule::AsyncioDanglingTask, Path::new("RUF006.py"))]
     #[test_case(Rule::CollectionLiteralConcatenation, Path::new("RUF005.py"))]
-    #[test_case(Rule::ExplicitFStringTypeConversion, Path::new("RUF010.py"))]
+    #[test_case(Rule::AsyncioDanglingTask, Path::new("RUF006.py"))]
+    #[test_case(Rule::ZipInsteadOfPairwise, Path::new("RUF007.py"))]
+    #[test_case(Rule::MutableDataclassDefault, Path::new("RUF008.py"))]
+    #[test_case(Rule::MutableDataclassDefault, Path::new("RUF008_attrs.py"))]
+    #[test_case(Rule::MutableDataclassDefault, Path::new("RUF008_deferred.py"))]
     #[test_case(Rule::FunctionCallInDataclassDefaultArgument, Path::new("RUF009.py"))]
+    #[test_case(
+        Rule::FunctionCallInDataclassDefaultArgument,
+        Path::new("RUF009_attrs.py")
+    )]
+    #[test_case(
+        Rule::FunctionCallInDataclassDefaultArgument,
+        Path::new("RUF009_attrs_auto_attribs.py")
+    )]
+    #[test_case(
+        Rule::FunctionCallInDataclassDefaultArgument,
+        Path::new("RUF009_deferred.py")
+    )]
+    #[test_case(Rule::ExplicitFStringTypeConversion, Path::new("RUF010.py"))]
+    #[test_case(Rule::MutableClassDefault, Path::new("RUF012.py"))]
+    #[test_case(Rule::MutableClassDefault, Path::new("RUF012_deferred.py"))]
     #[test_case(Rule::ImplicitOptional, Path::new("RUF013_0.py"))]
     #[test_case(Rule::ImplicitOptional, Path::new("RUF013_1.py"))]
     #[test_case(Rule::ImplicitOptional, Path::new("RUF013_2.py"))]
     #[test_case(Rule::ImplicitOptional, Path::new("RUF013_3.py"))]
-    #[test_case(Rule::MutableClassDefault, Path::new("RUF012.py"))]
-    #[test_case(Rule::MutableDataclassDefault, Path::new("RUF008.py"))]
-    #[test_case(Rule::ZipInsteadOfPairwise, Path::new("RUF007.py"))]
+    #[test_case(Rule::ImplicitOptional, Path::new("RUF013_4.py"))]
     #[test_case(
         Rule::UnnecessaryIterableAllocationForFirstElement,
         Path::new("RUF015.py")
@@ -58,9 +73,36 @@ mod tests {
     #[test_case(Rule::AssertWithPrintMessage, Path::new("RUF030.py"))]
     #[test_case(Rule::IncorrectlyParenthesizedTupleInSubscript, Path::new("RUF031.py"))]
     #[test_case(Rule::DecimalFromFloatLiteral, Path::new("RUF032.py"))]
-    #[test_case(Rule::UselessIfElse, Path::new("RUF034.py"))]
-    #[test_case(Rule::RedirectedNOQA, Path::new("RUF101.py"))]
     #[test_case(Rule::PostInitDefault, Path::new("RUF033.py"))]
+    #[test_case(Rule::UselessIfElse, Path::new("RUF034.py"))]
+    #[test_case(Rule::NoneNotAtEndOfUnion, Path::new("RUF036.py"))]
+    #[test_case(Rule::NoneNotAtEndOfUnion, Path::new("RUF036.pyi"))]
+    #[test_case(Rule::UnnecessaryEmptyIterableWithinDequeCall, Path::new("RUF037.py"))]
+    #[test_case(Rule::RedundantBoolLiteral, Path::new("RUF038.py"))]
+    #[test_case(Rule::RedundantBoolLiteral, Path::new("RUF038.pyi"))]
+    #[test_case(Rule::InvalidAssertMessageLiteralArgument, Path::new("RUF040.py"))]
+    #[test_case(Rule::UnnecessaryNestedLiteral, Path::new("RUF041.py"))]
+    #[test_case(Rule::UnnecessaryNestedLiteral, Path::new("RUF041.pyi"))]
+    #[test_case(Rule::UnnecessaryCastToInt, Path::new("RUF046.py"))]
+    #[test_case(Rule::UnnecessaryCastToInt, Path::new("RUF046_CR.py"))]
+    #[test_case(Rule::UnnecessaryCastToInt, Path::new("RUF046_LF.py"))]
+    #[test_case(Rule::NeedlessElse, Path::new("RUF047_if.py"))]
+    #[test_case(Rule::NeedlessElse, Path::new("RUF047_for.py"))]
+    #[test_case(Rule::NeedlessElse, Path::new("RUF047_while.py"))]
+    #[test_case(Rule::NeedlessElse, Path::new("RUF047_try.py"))]
+    #[test_case(Rule::MapIntVersionParsing, Path::new("RUF048.py"))]
+    #[test_case(Rule::MapIntVersionParsing, Path::new("RUF048_1.py"))]
+    #[test_case(Rule::IfKeyInDictDel, Path::new("RUF051.py"))]
+    #[test_case(Rule::UsedDummyVariable, Path::new("RUF052.py"))]
+    #[test_case(Rule::FalsyDictGetFallback, Path::new("RUF056.py"))]
+    #[test_case(Rule::UnusedUnpackedVariable, Path::new("RUF059_0.py"))]
+    #[test_case(Rule::UnusedUnpackedVariable, Path::new("RUF059_1.py"))]
+    #[test_case(Rule::UnusedUnpackedVariable, Path::new("RUF059_2.py"))]
+    #[test_case(Rule::UnusedUnpackedVariable, Path::new("RUF059_3.py"))]
+    #[test_case(Rule::InEmptyCollection, Path::new("RUF060.py"))]
+    #[test_case(Rule::RedirectedNOQA, Path::new("RUF101_0.py"))]
+    #[test_case(Rule::RedirectedNOQA, Path::new("RUF101_1.py"))]
+    #[test_case(Rule::InvalidRuleCode, Path::new("RUF102.py"))]
     fn rules(rule_code: Rule, path: &Path) -> Result<()> {
         let snapshot = format!("{}_{}", rule_code.noqa_code(), path.to_string_lossy());
         let diagnostics = test_path(
@@ -94,7 +136,7 @@ mod tests {
                 ruff: super::settings::Settings {
                     parenthesize_tuple_in_subscript: false,
                 },
-                target_version: PythonVersion::Py310,
+                unresolved_target_version: PythonVersion::PY310.into(),
                 ..LinterSettings::for_rule(Rule::IncorrectlyParenthesizedTupleInSubscript)
             },
         )?;
@@ -113,7 +155,7 @@ mod tests {
         let diagnostics = test_path(
             Path::new("ruff").join(path).as_path(),
             &settings::LinterSettings::for_rule(Rule::ImplicitOptional)
-                .with_target_version(PythonVersion::Py39),
+                .with_target_version(PythonVersion::PY39),
         )?;
         assert_messages!(snapshot, diagnostics);
         Ok(())
@@ -277,6 +319,50 @@ mod tests {
     }
 
     #[test]
+    fn ruff_noqa_filedirective_unused() -> Result<()> {
+        let diagnostics = test_path(
+            Path::new("ruff/RUF100_6.py"),
+            &settings::LinterSettings {
+                preview: PreviewMode::Enabled,
+                ..settings::LinterSettings::for_rules(vec![Rule::UnusedNOQA])
+            },
+        )?;
+        assert_messages!(diagnostics);
+        Ok(())
+    }
+
+    #[test]
+    fn ruff_noqa_filedirective_unused_last_of_many() -> Result<()> {
+        let diagnostics = test_path(
+            Path::new("ruff/RUF100_7.py"),
+            &settings::LinterSettings {
+                preview: PreviewMode::Enabled,
+                ..settings::LinterSettings::for_rules(vec![
+                    Rule::UnusedNOQA,
+                    Rule::FStringMissingPlaceholders,
+                    Rule::LineTooLong,
+                    Rule::UnusedVariable,
+                ])
+            },
+        )?;
+        assert_messages!(diagnostics);
+        Ok(())
+    }
+
+    #[test]
+    fn invalid_rule_code_external_rules() -> Result<()> {
+        let diagnostics = test_path(
+            Path::new("ruff/RUF102.py"),
+            &settings::LinterSettings {
+                external: vec!["V".to_string()],
+                ..settings::LinterSettings::for_rule(Rule::InvalidRuleCode)
+            },
+        )?;
+        assert_messages!(diagnostics);
+        Ok(())
+    }
+
+    #[test]
     fn ruff_per_file_ignores() -> Result<()> {
         let diagnostics = test_path(
             Path::new("ruff/ruff_per_file_ignores.py"),
@@ -356,7 +442,7 @@ mod tests {
     fn redirects() -> Result<()> {
         let diagnostics = test_path(
             Path::new("ruff/redirects.py"),
-            &settings::LinterSettings::for_rules(vec![Rule::NonPEP604Annotation]),
+            &settings::LinterSettings::for_rule(Rule::NonPEP604AnnotationUnion),
         )?;
         assert_messages!(diagnostics);
         Ok(())
@@ -365,7 +451,8 @@ mod tests {
     #[test_case(Rule::InvalidPyprojectToml, Path::new("bleach"))]
     #[test_case(Rule::InvalidPyprojectToml, Path::new("invalid_author"))]
     #[test_case(Rule::InvalidPyprojectToml, Path::new("maturin"))]
-    #[test_case(Rule::InvalidPyprojectToml, Path::new("maturin_gh_1615"))]
+    #[test_case(Rule::InvalidPyprojectToml, Path::new("various_invalid"))]
+    #[test_case(Rule::InvalidPyprojectToml, Path::new("pep639"))]
     fn invalid_pyproject_toml(rule_code: Rule, path: &Path) -> Result<()> {
         let snapshot = format!("{}_{}", rule_code.noqa_code(), path.to_string_lossy());
         let path = test_resource_path("fixtures")
@@ -383,7 +470,20 @@ mod tests {
         Ok(())
     }
 
-    #[test_case(Rule::ZipInsteadOfPairwise, Path::new("RUF007.py"))]
+    #[test_case(Rule::UnrawRePattern, Path::new("RUF039.py"))]
+    #[test_case(Rule::UnrawRePattern, Path::new("RUF039_concat.py"))]
+    #[test_case(Rule::UnnecessaryRegularExpression, Path::new("RUF055_0.py"))]
+    #[test_case(Rule::UnnecessaryRegularExpression, Path::new("RUF055_1.py"))]
+    #[test_case(Rule::UnnecessaryRegularExpression, Path::new("RUF055_2.py"))]
+    #[test_case(Rule::PytestRaisesAmbiguousPattern, Path::new("RUF043.py"))]
+    #[test_case(Rule::UnnecessaryRound, Path::new("RUF057.py"))]
+    #[test_case(Rule::DataclassEnum, Path::new("RUF049.py"))]
+    #[test_case(Rule::StarmapZip, Path::new("RUF058_0.py"))]
+    #[test_case(Rule::StarmapZip, Path::new("RUF058_1.py"))]
+    #[test_case(Rule::ClassWithMixedTypeVars, Path::new("RUF053.py"))]
+    #[test_case(Rule::IndentedFormFeed, Path::new("RUF054.py"))]
+    #[test_case(Rule::ImplicitClassVarInDataclass, Path::new("RUF045.py"))]
+    #[test_case(Rule::CollectionLiteralConcatenation, Path::new("RUF005_slices.py"))]
     fn preview_rules(rule_code: Rule, path: &Path) -> Result<()> {
         let snapshot = format!(
             "preview__{}_{}",
@@ -394,6 +494,34 @@ mod tests {
             Path::new("ruff").join(path).as_path(),
             &settings::LinterSettings {
                 preview: PreviewMode::Enabled,
+                ..settings::LinterSettings::for_rule(rule_code)
+            },
+        )?;
+        assert_messages!(snapshot, diagnostics);
+        Ok(())
+    }
+
+    #[test_case(Rule::UsedDummyVariable, Path::new("RUF052.py"), r"^_+", 1)]
+    #[test_case(Rule::UsedDummyVariable, Path::new("RUF052.py"), r"", 2)]
+    fn custom_regexp_preset(
+        rule_code: Rule,
+        path: &Path,
+        regex_pattern: &str,
+        id: u8,
+    ) -> Result<()> {
+        // Compile the regex from the pattern string
+        let regex = Regex::new(regex_pattern).unwrap();
+
+        let snapshot = format!(
+            "custom_dummy_var_regexp_preset__{}_{}_{}",
+            rule_code.noqa_code(),
+            path.to_string_lossy(),
+            id,
+        );
+        let diagnostics = test_path(
+            Path::new("ruff").join(path).as_path(),
+            &settings::LinterSettings {
+                dummy_variable_rgx: regex,
                 ..settings::LinterSettings::for_rule(rule_code)
             },
         )?;

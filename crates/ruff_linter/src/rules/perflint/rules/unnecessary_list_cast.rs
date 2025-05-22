@@ -1,6 +1,6 @@
 use ruff_diagnostics::{AlwaysFixableViolation, Diagnostic, Edit, Fix};
-use ruff_macros::{derive_message_formats, violation};
-use ruff_python_ast::statement_visitor::{walk_stmt, StatementVisitor};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
+use ruff_python_ast::statement_visitor::{StatementVisitor, walk_stmt};
 use ruff_python_ast::{self as ast, Arguments, Expr, Stmt};
 use ruff_python_semantic::analyze::typing::find_assigned_value;
 use ruff_text_size::TextRange;
@@ -35,22 +35,22 @@ use crate::checkers::ast::Checker;
 /// for i in items:
 ///     print(i)
 /// ```
-#[violation]
-pub struct UnnecessaryListCast;
+#[derive(ViolationMetadata)]
+pub(crate) struct UnnecessaryListCast;
 
 impl AlwaysFixableViolation for UnnecessaryListCast {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("Do not cast an iterable to `list` before iterating over it")
+        "Do not cast an iterable to `list` before iterating over it".to_string()
     }
 
     fn fix_title(&self) -> String {
-        format!("Remove `list()` cast")
+        "Remove `list()` cast".to_string()
     }
 }
 
 /// PERF101
-pub(crate) fn unnecessary_list_cast(checker: &mut Checker, iter: &Expr, body: &[Stmt]) {
+pub(crate) fn unnecessary_list_cast(checker: &Checker, iter: &Expr, body: &[Stmt]) {
     let Expr::Call(ast::ExprCall {
         func,
         arguments:
@@ -88,7 +88,7 @@ pub(crate) fn unnecessary_list_cast(checker: &mut Checker, iter: &Expr, body: &[
         }) => {
             let mut diagnostic = Diagnostic::new(UnnecessaryListCast, *list_range);
             diagnostic.set_fix(remove_cast(*list_range, *iterable_range));
-            checker.diagnostics.push(diagnostic);
+            checker.report_diagnostic(diagnostic);
         }
         Expr::Name(ast::ExprName {
             id,
@@ -116,7 +116,7 @@ pub(crate) fn unnecessary_list_cast(checker: &mut Checker, iter: &Expr, body: &[
 
                 let mut diagnostic = Diagnostic::new(UnnecessaryListCast, *list_range);
                 diagnostic.set_fix(remove_cast(*list_range, *iterable_range));
-                checker.diagnostics.push(diagnostic);
+                checker.report_diagnostic(diagnostic);
             }
         }
         _ => {}

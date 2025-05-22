@@ -1,10 +1,11 @@
 use ruff_diagnostics::{Diagnostic, Edit, Fix, FixAvailability, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::{self as ast, Expr, ExprContext, Operator};
 use ruff_text_size::{Ranged, TextRange};
 
 use crate::checkers::ast::Checker;
 use crate::fix::snippet::SourceCodeSnippet;
+use crate::preview::is_support_slices_in_literal_concatenation_enabled;
 
 /// ## What it does
 /// Checks for uses of the `+` operator to concatenate collections.
@@ -33,11 +34,17 @@ use crate::fix::snippet::SourceCodeSnippet;
 /// bar = [1, *foo, 5, 6]
 /// ```
 ///
+/// ## Fix safety
+///
+/// The fix is always marked as unsafe because the `+` operator uses the `__add__` magic method and
+/// `*`-unpacking uses the `__iter__` magic method. Both of these could have custom
+/// implementations, causing the fix to change program behaviour.
+///
 /// ## References
 /// - [PEP 448 – Additional Unpacking Generalizations](https://peps.python.org/pep-0448/)
 /// - [Python documentation: Sequence Types — `list`, `tuple`, `range`](https://docs.python.org/3/library/stdtypes.html#sequence-types-list-tuple-range)
-#[violation]
-pub struct CollectionLiteralConcatenation {
+#[derive(ViolationMetadata)]
+pub(crate) struct CollectionLiteralConcatenation {
     expression: SourceCodeSnippet,
 }
 
@@ -46,21 +53,19 @@ impl Violation for CollectionLiteralConcatenation {
 
     #[derive_message_formats]
     fn message(&self) -> String {
-        let CollectionLiteralConcatenation { expression } = self;
-        if let Some(expression) = expression.full_display() {
+        if let Some(expression) = self.expression.full_display() {
             format!("Consider `{expression}` instead of concatenation")
         } else {
-            format!("Consider iterable unpacking instead of concatenation")
+            "Consider iterable unpacking instead of concatenation".to_string()
         }
     }
 
     fn fix_title(&self) -> Option<String> {
-        let CollectionLiteralConcatenation { expression } = self;
-        if let Some(expression) = expression.full_display() {
-            Some(format!("Replace with `{expression}`"))
-        } else {
-            Some(format!("Replace with iterable unpacking"))
-        }
+        let title = match self.expression.full_display() {
+            Some(expression) => format!("Replace with `{expression}`"),
+            None => "Replace with iterable unpacking".to_string(),
+        };
+        Some(title)
     }
 }
 
@@ -91,7 +96,7 @@ enum Type {
 }
 
 /// Recursively merge all the tuples and lists in the expression.
-fn concatenate_expressions(expr: &Expr) -> Option<(Expr, Type)> {
+fn concatenate_expressions(expr: &Expr, should_support_slices: bool) -> Option<(Expr, Type)> {
     let Expr::BinOp(ast::ExprBinOp {
         left,
         op: Operator::Add,
@@ -103,18 +108,22 @@ fn concatenate_expressions(expr: &Expr) -> Option<(Expr, Type)> {
     };
 
     let new_left = match left.as_ref() {
-        Expr::BinOp(ast::ExprBinOp { .. }) => match concatenate_expressions(left) {
-            Some((new_left, _)) => new_left,
-            None => *left.clone(),
-        },
+        Expr::BinOp(ast::ExprBinOp { .. }) => {
+            match concatenate_expressions(left, should_support_slices) {
+                Some((new_left, _)) => new_left,
+                None => *left.clone(),
+            }
+        }
         _ => *left.clone(),
     };
 
     let new_right = match right.as_ref() {
-        Expr::BinOp(ast::ExprBinOp { .. }) => match concatenate_expressions(right) {
-            Some((new_right, _)) => new_right,
-            None => *right.clone(),
-        },
+        Expr::BinOp(ast::ExprBinOp { .. }) => {
+            match concatenate_expressions(right, should_support_slices) {
+                Some((new_right, _)) => new_right,
+                None => *right.clone(),
+            }
+        }
         _ => *right.clone(),
     };
 
@@ -139,6 +148,12 @@ fn concatenate_expressions(expr: &Expr) -> Option<(Expr, Type)> {
         // We'll be a bit conservative here; only calls, names and attribute accesses
         // will be considered as splat elements.
         Expr::Call(_) | Expr::Attribute(_) | Expr::Name(_) => {
+            make_splat_elts(splat_element, other_elements, splat_at_left)
+        }
+        // Subscripts are also considered safe-ish to splat if the indexer is a slice.
+        Expr::Subscript(ast::ExprSubscript { slice, .. })
+            if should_support_slices && matches!(&**slice, Expr::Slice(_)) =>
+        {
             make_splat_elts(splat_element, other_elements, splat_at_left)
         }
         // If the splat element is itself a list/tuple, insert them in the other list/tuple.
@@ -171,7 +186,7 @@ fn concatenate_expressions(expr: &Expr) -> Option<(Expr, Type)> {
 }
 
 /// RUF005
-pub(crate) fn collection_literal_concatenation(checker: &mut Checker, expr: &Expr) {
+pub(crate) fn collection_literal_concatenation(checker: &Checker, expr: &Expr) {
     // If the expression is already a child of an addition, we'll have analyzed it already.
     if matches!(
         checker.semantic().current_expression_parent(),
@@ -183,7 +198,10 @@ pub(crate) fn collection_literal_concatenation(checker: &mut Checker, expr: &Exp
         return;
     }
 
-    let Some((new_expr, type_)) = concatenate_expressions(expr) else {
+    let should_support_slices =
+        is_support_slices_in_literal_concatenation_enabled(checker.settings);
+
+    let Some((new_expr, type_)) = concatenate_expressions(expr, should_support_slices) else {
         return;
     };
 
@@ -209,5 +227,5 @@ pub(crate) fn collection_literal_concatenation(checker: &mut Checker, expr: &Exp
             expr.range(),
         )));
     }
-    checker.diagnostics.push(diagnostic);
+    checker.report_diagnostic(diagnostic);
 }

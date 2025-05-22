@@ -69,7 +69,7 @@ subprocess_run_without_check.py:10:1: PLW1510 [*] `subprocess.run` without expli
  9 | )
 10 | subprocess.run(["ls"], **kwargs)
    | ^^^^^^^^^^^^^^ PLW1510
-11 | 
+11 |
 12 | # Non-errors.
    |
    = help: Add explicit `check=False`
@@ -83,5 +83,3 @@ subprocess_run_without_check.py:10:1: PLW1510 [*] `subprocess.run` without expli
 11 11 | 
 12 12 | # Non-errors.
 13 13 | subprocess.run("ls", check=True)
-
-

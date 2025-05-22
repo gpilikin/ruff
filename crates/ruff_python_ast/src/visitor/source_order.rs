@@ -4,7 +4,7 @@ use crate::{
     ParameterWithDefault, Parameters, Pattern, PatternArguments, PatternKeyword, Singleton, Stmt,
     StringLiteral, TypeParam, TypeParams, UnaryOp, WithItem,
 };
-use crate::{AnyNodeRef, AstNode};
+use crate::{AnyNodeRef, Identifier};
 
 /// Visitor that traverses all nodes recursively in the order they appear in the source.
 ///
@@ -170,6 +170,11 @@ pub trait SourceOrderVisitor<'a> {
     fn visit_bytes_literal(&mut self, bytes_literal: &'a BytesLiteral) {
         walk_bytes_literal(self, bytes_literal);
     }
+
+    #[inline]
+    fn visit_identifier(&mut self, identifier: &'a Identifier) {
+        walk_identifier(self, identifier);
+    }
 }
 
 pub fn walk_module<'a, V>(visitor: &mut V, module: &'a Mod)
@@ -203,33 +208,7 @@ where
     let node = AnyNodeRef::from(stmt);
 
     if visitor.enter_node(node).is_traverse() {
-        match stmt {
-            Stmt::Expr(stmt) => stmt.visit_source_order(visitor),
-            Stmt::FunctionDef(stmt) => stmt.visit_source_order(visitor),
-            Stmt::ClassDef(stmt) => stmt.visit_source_order(visitor),
-            Stmt::Return(stmt) => stmt.visit_source_order(visitor),
-            Stmt::Delete(stmt) => stmt.visit_source_order(visitor),
-            Stmt::TypeAlias(stmt) => stmt.visit_source_order(visitor),
-            Stmt::Assign(stmt) => stmt.visit_source_order(visitor),
-            Stmt::AugAssign(stmt) => stmt.visit_source_order(visitor),
-            Stmt::AnnAssign(stmt) => stmt.visit_source_order(visitor),
-            Stmt::For(stmt) => stmt.visit_source_order(visitor),
-            Stmt::While(stmt) => stmt.visit_source_order(visitor),
-            Stmt::If(stmt) => stmt.visit_source_order(visitor),
-            Stmt::With(stmt) => stmt.visit_source_order(visitor),
-            Stmt::Match(stmt) => stmt.visit_source_order(visitor),
-            Stmt::Raise(stmt) => stmt.visit_source_order(visitor),
-            Stmt::Try(stmt) => stmt.visit_source_order(visitor),
-            Stmt::Assert(stmt) => stmt.visit_source_order(visitor),
-            Stmt::Import(stmt) => stmt.visit_source_order(visitor),
-            Stmt::ImportFrom(stmt) => stmt.visit_source_order(visitor),
-            Stmt::Pass(stmt) => stmt.visit_source_order(visitor),
-            Stmt::Break(stmt) => stmt.visit_source_order(visitor),
-            Stmt::Continue(stmt) => stmt.visit_source_order(visitor),
-            Stmt::Global(stmt) => stmt.visit_source_order(visitor),
-            Stmt::Nonlocal(stmt) => stmt.visit_source_order(visitor),
-            Stmt::IpyEscapeCommand(stmt) => stmt.visit_source_order(visitor),
-        }
+        stmt.visit_source_order(visitor);
     }
 
     visitor.leave_node(node);
@@ -455,11 +434,7 @@ where
 {
     let node = AnyNodeRef::from(type_param);
     if visitor.enter_node(node).is_traverse() {
-        match type_param {
-            TypeParam::TypeVar(type_param) => type_param.visit_source_order(visitor),
-            TypeParam::TypeVarTuple(type_param) => type_param.visit_source_order(visitor),
-            TypeParam::ParamSpec(type_param) => type_param.visit_source_order(visitor),
-        }
+        type_param.visit_source_order(visitor);
     }
     visitor.leave_node(node);
 }
@@ -607,6 +582,18 @@ where
     let node = AnyNodeRef::from(alias);
     if visitor.enter_node(node).is_traverse() {
         alias.visit_source_order(visitor);
+    }
+    visitor.leave_node(node);
+}
+
+#[inline]
+pub fn walk_identifier<'a, V: SourceOrderVisitor<'a> + ?Sized>(
+    visitor: &mut V,
+    identifier: &'a Identifier,
+) {
+    let node = AnyNodeRef::from(identifier);
+    if visitor.enter_node(node).is_traverse() {
+        identifier.visit_source_order(visitor);
     }
     visitor.leave_node(node);
 }

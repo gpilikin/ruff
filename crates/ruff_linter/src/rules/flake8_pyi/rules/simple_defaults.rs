@@ -1,17 +1,14 @@
 use ruff_diagnostics::{AlwaysFixableViolation, Diagnostic, Edit, Fix, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::name::QualifiedName;
-use ruff_python_ast::{
-    self as ast, Expr, Operator, ParameterWithDefault, Parameters, Stmt, UnaryOp,
-};
-use ruff_python_semantic::{analyze::class::is_enumeration, ScopeKind, SemanticModel};
+use ruff_python_ast::{self as ast, Expr, Operator, Parameters, Stmt, UnaryOp};
+use ruff_python_semantic::{ScopeKind, SemanticModel, analyze::class::is_enumeration};
 use ruff_text_size::Ranged;
 
-use crate::checkers::ast::Checker;
-use crate::importer::ImportRequest;
-use crate::rules::flake8_pyi::rules::TypingModule;
-use crate::settings::types::PythonVersion;
 use crate::Locator;
+use crate::checkers::ast::Checker;
+use crate::rules::flake8_pyi::rules::TypingModule;
+use ruff_python_ast::PythonVersion;
 
 /// ## What it does
 /// Checks for typed function arguments in stubs with complex default values.
@@ -43,13 +40,13 @@ use crate::Locator;
 ///
 /// ## References
 /// - [`flake8-pyi`](https://github.com/PyCQA/flake8-pyi/blob/main/ERRORCODES.md)
-#[violation]
-pub struct TypedArgumentDefaultInStub;
+#[derive(ViolationMetadata)]
+pub(crate) struct TypedArgumentDefaultInStub;
 
 impl AlwaysFixableViolation for TypedArgumentDefaultInStub {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("Only simple default values allowed for typed arguments")
+        "Only simple default values allowed for typed arguments".to_string()
     }
 
     fn fix_title(&self) -> String {
@@ -89,13 +86,13 @@ impl AlwaysFixableViolation for TypedArgumentDefaultInStub {
 ///
 /// ## References
 /// - [`flake8-pyi`](https://github.com/PyCQA/flake8-pyi/blob/main/ERRORCODES.md)
-#[violation]
-pub struct ArgumentDefaultInStub;
+#[derive(ViolationMetadata)]
+pub(crate) struct ArgumentDefaultInStub;
 
 impl AlwaysFixableViolation for ArgumentDefaultInStub {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("Only simple default values allowed for arguments")
+        "Only simple default values allowed for arguments".to_string()
     }
 
     fn fix_title(&self) -> String {
@@ -133,13 +130,13 @@ impl AlwaysFixableViolation for ArgumentDefaultInStub {
 ///
 /// ## References
 /// - [`flake8-pyi`](https://github.com/PyCQA/flake8-pyi/blob/main/ERRORCODES.md)
-#[violation]
-pub struct AssignmentDefaultInStub;
+#[derive(ViolationMetadata)]
+pub(crate) struct AssignmentDefaultInStub;
 
 impl AlwaysFixableViolation for AssignmentDefaultInStub {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("Only simple default values allowed for assignments")
+        "Only simple default values allowed for assignments".to_string()
     }
 
     fn fix_title(&self) -> String {
@@ -147,14 +144,14 @@ impl AlwaysFixableViolation for AssignmentDefaultInStub {
     }
 }
 
-/// ## What it does?
+/// ## What it does
 /// Checks for unannotated assignments in stub (`.pyi`) files.
 ///
 /// ## Why is this bad?
 /// Stub files exist to provide type hints, and are never executed. As such,
 /// all assignments in stub files should be annotated with a type.
-#[violation]
-pub struct UnannotatedAssignmentInStub {
+#[derive(ViolationMetadata)]
+pub(crate) struct UnannotatedAssignmentInStub {
     name: String,
 }
 
@@ -184,8 +181,8 @@ impl Violation for UnannotatedAssignmentInStub {
 /// ```pyi
 /// __all__: list[str] = ["foo", "bar"]
 /// ```
-#[violation]
-pub struct UnassignedSpecialVariableInStub {
+#[derive(ViolationMetadata)]
+pub(crate) struct UnassignedSpecialVariableInStub {
     name: String,
 }
 
@@ -193,7 +190,9 @@ impl Violation for UnassignedSpecialVariableInStub {
     #[derive_message_formats]
     fn message(&self) -> String {
         let UnassignedSpecialVariableInStub { name } = self;
-        format!("`{name}` in a stub file must have a value, as it has the same semantics as `{name}` at runtime")
+        format!(
+            "`{name}` in a stub file must have a value, as it has the same semantics as `{name}` at runtime"
+        )
     }
 }
 
@@ -220,8 +219,18 @@ impl Violation for UnassignedSpecialVariableInStub {
 ///
 /// Vector: TypeAlias = list[float]
 /// ```
-#[violation]
-pub struct TypeAliasWithoutAnnotation {
+///
+/// ## Availability
+///
+/// Because this rule relies on the third-party `typing_extensions` module for Python versions
+/// before 3.10, its diagnostic will not be emitted, and no fix will be offered, if
+/// `typing_extensions` imports have been disabled by the [`lint.typing-extensions`] linter option.
+///
+/// ## Options
+///
+/// - `lint.typing-extensions`
+#[derive(ViolationMetadata)]
+pub(crate) struct TypeAliasWithoutAnnotation {
     module: TypingModule,
     name: String,
     value: String,
@@ -425,6 +434,8 @@ fn is_valid_default_value_without_annotation(default: &Expr) -> bool {
 
 /// Returns `true` if an [`Expr`] appears to be `TypeVar`, `TypeVarTuple`, `NewType`, or `ParamSpec`
 /// call.
+///
+/// See also [`ruff_python_semantic::analyze::typing::TypeVarLikeChecker::is_type_var_like_call`].
 fn is_type_var_like_call(expr: &Expr, semantic: &SemanticModel) -> bool {
     let Expr::Call(ast::ExprCall { func, .. }) = expr else {
         return false;
@@ -486,17 +497,12 @@ fn is_annotatable_type_alias(value: &Expr, semantic: &SemanticModel) -> bool {
 }
 
 /// PYI011
-pub(crate) fn typed_argument_simple_defaults(checker: &mut Checker, parameters: &Parameters) {
-    for ParameterWithDefault {
-        parameter,
-        default,
-        range: _,
-    } in parameters.iter_non_variadic_params()
-    {
-        let Some(default) = default else {
+pub(crate) fn typed_argument_simple_defaults(checker: &Checker, parameters: &Parameters) {
+    for parameter in parameters.iter_non_variadic_params() {
+        let Some(default) = parameter.default() else {
             continue;
         };
-        if parameter.annotation.is_some() {
+        if parameter.annotation().is_some() {
             if !is_valid_default_value_with_annotation(
                 default,
                 true,
@@ -510,24 +516,19 @@ pub(crate) fn typed_argument_simple_defaults(checker: &mut Checker, parameters: 
                     default.range(),
                 )));
 
-                checker.diagnostics.push(diagnostic);
+                checker.report_diagnostic(diagnostic);
             }
         }
     }
 }
 
 /// PYI014
-pub(crate) fn argument_simple_defaults(checker: &mut Checker, parameters: &Parameters) {
-    for ParameterWithDefault {
-        parameter,
-        default,
-        range: _,
-    } in parameters.iter_non_variadic_params()
-    {
-        let Some(default) = default else {
+pub(crate) fn argument_simple_defaults(checker: &Checker, parameters: &Parameters) {
+    for parameter in parameters.iter_non_variadic_params() {
+        let Some(default) = parameter.default() else {
             continue;
         };
-        if parameter.annotation.is_none() {
+        if parameter.annotation().is_none() {
             if !is_valid_default_value_with_annotation(
                 default,
                 true,
@@ -541,14 +542,14 @@ pub(crate) fn argument_simple_defaults(checker: &mut Checker, parameters: &Param
                     default.range(),
                 )));
 
-                checker.diagnostics.push(diagnostic);
+                checker.report_diagnostic(diagnostic);
             }
         }
     }
 }
 
 /// PYI015
-pub(crate) fn assignment_default_in_stub(checker: &mut Checker, targets: &[Expr], value: &Expr) {
+pub(crate) fn assignment_default_in_stub(checker: &Checker, targets: &[Expr], value: &Expr) {
     let [target] = targets else {
         return;
     };
@@ -573,12 +574,12 @@ pub(crate) fn assignment_default_in_stub(checker: &mut Checker, targets: &[Expr]
         "...".to_string(),
         value.range(),
     )));
-    checker.diagnostics.push(diagnostic);
+    checker.report_diagnostic(diagnostic);
 }
 
 /// PYI015
 pub(crate) fn annotated_assignment_default_in_stub(
-    checker: &mut Checker,
+    checker: &Checker,
     target: &Expr,
     value: &Expr,
     annotation: &Expr,
@@ -607,15 +608,11 @@ pub(crate) fn annotated_assignment_default_in_stub(
         "...".to_string(),
         value.range(),
     )));
-    checker.diagnostics.push(diagnostic);
+    checker.report_diagnostic(diagnostic);
 }
 
 /// PYI052
-pub(crate) fn unannotated_assignment_in_stub(
-    checker: &mut Checker,
-    targets: &[Expr],
-    value: &Expr,
-) {
+pub(crate) fn unannotated_assignment_in_stub(checker: &Checker, targets: &[Expr], value: &Expr) {
     let [target] = targets else {
         return;
     };
@@ -641,7 +638,7 @@ pub(crate) fn unannotated_assignment_in_stub(
             return;
         }
     }
-    checker.diagnostics.push(Diagnostic::new(
+    checker.report_diagnostic(Diagnostic::new(
         UnannotatedAssignmentInStub {
             name: id.to_string(),
         },
@@ -650,11 +647,7 @@ pub(crate) fn unannotated_assignment_in_stub(
 }
 
 /// PYI035
-pub(crate) fn unassigned_special_variable_in_stub(
-    checker: &mut Checker,
-    target: &Expr,
-    stmt: &Stmt,
-) {
+pub(crate) fn unassigned_special_variable_in_stub(checker: &Checker, target: &Expr, stmt: &Stmt) {
     let Expr::Name(ast::ExprName { id, .. }) = target else {
         return;
     };
@@ -663,7 +656,7 @@ pub(crate) fn unassigned_special_variable_in_stub(
         return;
     }
 
-    checker.diagnostics.push(Diagnostic::new(
+    checker.report_diagnostic(Diagnostic::new(
         UnassignedSpecialVariableInStub {
             name: id.to_string(),
         },
@@ -672,7 +665,7 @@ pub(crate) fn unassigned_special_variable_in_stub(
 }
 
 /// PYI026
-pub(crate) fn type_alias_without_annotation(checker: &mut Checker, value: &Expr, targets: &[Expr]) {
+pub(crate) fn type_alias_without_annotation(checker: &Checker, value: &Expr, targets: &[Expr]) {
     let [target] = targets else {
         return;
     };
@@ -685,10 +678,14 @@ pub(crate) fn type_alias_without_annotation(checker: &mut Checker, value: &Expr,
         return;
     }
 
-    let module = if checker.settings.target_version >= PythonVersion::Py310 {
+    let module = if checker.target_version() >= PythonVersion::PY310 {
         TypingModule::Typing
     } else {
         TypingModule::TypingExtensions
+    };
+
+    let Some(importer) = checker.typing_importer("TypeAlias", PythonVersion::PY310) else {
+        return;
     };
 
     let mut diagnostic = Diagnostic::new(
@@ -700,15 +697,11 @@ pub(crate) fn type_alias_without_annotation(checker: &mut Checker, value: &Expr,
         target.range(),
     );
     diagnostic.try_set_fix(|| {
-        let (import_edit, binding) = checker.importer().get_or_import_symbol(
-            &ImportRequest::import(module.as_str(), "TypeAlias"),
-            target.start(),
-            checker.semantic(),
-        )?;
+        let (import_edit, binding) = importer.import(target.start())?;
         Ok(Fix::safe_edits(
             Edit::range_replacement(format!("{id}: {binding}"), target.range()),
             [import_edit],
         ))
     });
-    checker.diagnostics.push(diagnostic);
+    checker.report_diagnostic(diagnostic);
 }

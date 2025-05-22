@@ -1,5 +1,5 @@
 use ruff_diagnostics::{Diagnostic, Edit, Fix, FixAvailability, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::{Expr, ExprCall};
 use ruff_python_semantic::Modules;
 use ruff_text_size::{Ranged, TextRange};
@@ -31,8 +31,8 @@ use crate::rules::flake8_async::helpers::MethodName;
 /// ## Fix safety
 /// This rule's fix is marked as unsafe, as adding an `await` to a function
 /// call changes its semantics and runtime behavior.
-#[violation]
-pub struct TrioSyncCall {
+#[derive(ViolationMetadata)]
+pub(crate) struct TrioSyncCall {
     method_name: MethodName,
 }
 
@@ -46,12 +46,12 @@ impl Violation for TrioSyncCall {
     }
 
     fn fix_title(&self) -> Option<String> {
-        Some(format!("Add `await`"))
+        Some("Add `await`".to_string())
     }
 }
 
 /// ASYNC105
-pub(crate) fn sync_call(checker: &mut Checker, call: &ExprCall) {
+pub(crate) fn sync_call(checker: &Checker, call: &ExprCall) {
     if !checker.semantic().seen_module(Modules::TRIO) {
         return;
     }
@@ -78,7 +78,7 @@ pub(crate) fn sync_call(checker: &mut Checker, call: &ExprCall) {
         .is_some_and(Expr::is_await_expr)
     {
         return;
-    };
+    }
 
     let mut diagnostic = Diagnostic::new(TrioSyncCall { method_name }, call.range);
     if checker.semantic().in_async_context() {
@@ -91,5 +91,5 @@ pub(crate) fn sync_call(checker: &mut Checker, call: &ExprCall) {
             call.func.start(),
         )));
     }
-    checker.diagnostics.push(diagnostic);
+    checker.report_diagnostic(diagnostic);
 }

@@ -180,3 +180,21 @@ Module(
 5 | return *x and y
   |         ^^^^^^^ Syntax Error: Boolean expression cannot be used here
   |
+
+
+## Semantic Syntax Errors
+
+  |
+1 | return *
+  |        ^ Syntax Error: Starred expression cannot be used here
+2 | return yield x
+3 | return yield from x
+  |
+
+
+  |
+3 | return yield from x
+4 | return x := 1
+5 | return *x and y
+  |        ^^^^^^^^ Syntax Error: Starred expression cannot be used here
+  |

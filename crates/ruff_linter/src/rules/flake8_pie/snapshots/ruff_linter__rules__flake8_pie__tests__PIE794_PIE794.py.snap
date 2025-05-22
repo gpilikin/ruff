@@ -7,7 +7,7 @@ PIE794.py:4:5: PIE794 [*] Class field `name` is defined multiple times
 3 |     # ....
 4 |     name = StringField()  # PIE794
   |     ^^^^^^^^^^^^^^^^^^^^ PIE794
-5 | 
+5 |
 6 |     def remove(self) -> None:
   |
   = help: Remove duplicate field definition for `name`
@@ -27,7 +27,7 @@ PIE794.py:13:5: PIE794 [*] Class field `name` is defined multiple times
 12 |     # ....
 13 |     name = StringField()  # PIE794
    |     ^^^^^^^^^^^^^^^^^^^^ PIE794
-14 | 
+14 |
 15 |     def foo(self) -> None:
    |
    = help: Remove duplicate field definition for `name`
@@ -109,5 +109,3 @@ PIE794.py:52:5: PIE794 [*] Class field `name` is defined multiple times
 50 50 |     name: str = "Foo"
 51 51 |     name: str = name + " Bar"
 52    |-    name: str = "Bar"  # PIE794
-
-

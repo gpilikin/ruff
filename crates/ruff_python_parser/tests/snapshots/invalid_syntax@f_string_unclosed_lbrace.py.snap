@@ -223,7 +223,7 @@ Module(
 
   |
 1 | f"{"
-  |      Syntax Error: f-string: unterminated string
+  |     ^ Syntax Error: f-string: unterminated string
 2 | f"{foo!r"
 3 | f"{foo="
   |
@@ -231,7 +231,7 @@ Module(
 
   |
 1 | f"{"
-  |      Syntax Error: f-string: unterminated string
+  |     ^ Syntax Error: f-string: unterminated string
 2 | f"{foo!r"
 3 | f"{foo="
   |
@@ -249,7 +249,7 @@ Module(
   |
 1 | f"{"
 2 | f"{foo!r"
-  |           Syntax Error: f-string: unterminated string
+  |          ^ Syntax Error: f-string: unterminated string
 3 | f"{foo="
 4 | f"{"
   |
@@ -258,7 +258,7 @@ Module(
   |
 1 | f"{"
 2 | f"{foo!r"
-  |           Syntax Error: f-string: unterminated string
+  |          ^ Syntax Error: f-string: unterminated string
 3 | f"{foo="
 4 | f"{"
   |
@@ -277,7 +277,7 @@ Module(
   |
 1 | f"{"
 2 | f"{foo!r"
-  |           Syntax Error: Expected FStringEnd, found Unknown
+  |          ^ Syntax Error: Expected FStringEnd, found Unknown
 3 | f"{foo="
 4 | f"{"
   |
@@ -297,7 +297,7 @@ Module(
 1 | f"{"
 2 | f"{foo!r"
 3 | f"{foo="
-  |          Syntax Error: f-string: unterminated string
+  |         ^ Syntax Error: f-string: unterminated string
 4 | f"{"
 5 | f"""{"""
   |
@@ -307,7 +307,7 @@ Module(
 1 | f"{"
 2 | f"{foo!r"
 3 | f"{foo="
-  |          Syntax Error: f-string: unterminated string
+  |         ^ Syntax Error: f-string: unterminated string
 4 | f"{"
 5 | f"""{"""
   |
@@ -341,10 +341,12 @@ Module(
   |
 4 | f"{"
 5 | f"""{"""
+  |         ^ Syntax Error: unexpected EOF while parsing
   |
 
 
   |
 4 | f"{"
 5 | f"""{"""
+  |         ^ Syntax Error: f-string: unterminated string
   |

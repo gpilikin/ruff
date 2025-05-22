@@ -141,8 +141,7 @@ PT003.py:66:5: PT003 [*] `scope='function'` is implied in `@pytest.fixture()`
    |
 64 |       # another comment ,)
 65 |       
-66 |       scope=\
-   |  _____^
+66 | /     scope=\
 67 | |         "function"  # some comment ),
    | |__________________^ PT003
 68 |       ,
@@ -160,5 +159,3 @@ PT003.py:66:5: PT003 [*] `scope='function'` is implied in `@pytest.fixture()`
 70 66 |     name2=name, name3="my_fixture", **kwargs
 71 67 | )
 72 68 | def error_multiple_args():
-
-

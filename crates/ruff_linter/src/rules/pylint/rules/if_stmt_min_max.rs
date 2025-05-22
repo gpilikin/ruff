@@ -1,5 +1,5 @@
-use ruff_diagnostics::{Diagnostic, Edit, Fix, FixAvailability, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_diagnostics::{Applicability, Diagnostic, Edit, Fix, FixAvailability, Violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::comparable::ComparableExpr;
 use ruff_python_ast::parenthesize::parenthesized_range;
 use ruff_python_ast::{self as ast, CmpOp, Stmt};
@@ -29,11 +29,24 @@ use crate::fix::snippet::SourceCodeSnippet;
 /// highest_score = max(highest_score, score)
 /// ```
 ///
+/// ## Fix safety
+/// This fix is marked unsafe if it would delete any comments within the replacement range.
+///
+/// An example to illustrate where comments are preserved and where they are not:
+///
+/// ```py
+/// a, b = 0, 10
+///
+/// if a >= b: # deleted comment
+///     # deleted comment
+///     a = b # preserved comment
+/// ```
+///
 /// ## References
-/// - [Python documentation: max function](https://docs.python.org/3/library/functions.html#max)
-/// - [Python documentation: min function](https://docs.python.org/3/library/functions.html#min)
-#[violation]
-pub struct IfStmtMinMax {
+/// - [Python documentation: `max`](https://docs.python.org/3/library/functions.html#max)
+/// - [Python documentation: `min`](https://docs.python.org/3/library/functions.html#min)
+#[derive(ViolationMetadata)]
+pub(crate) struct IfStmtMinMax {
     min_max: MinMax,
     replacement: SourceCodeSnippet,
 }
@@ -68,7 +81,7 @@ impl Violation for IfStmtMinMax {
 }
 
 /// R1730, R1731
-pub(crate) fn if_stmt_min_max(checker: &mut Checker, stmt_if: &ast::StmtIf) {
+pub(crate) fn if_stmt_min_max(checker: &Checker, stmt_if: &ast::StmtIf) {
     let ast::StmtIf {
         test,
         body,
@@ -80,11 +93,13 @@ pub(crate) fn if_stmt_min_max(checker: &mut Checker, stmt_if: &ast::StmtIf) {
         return;
     }
 
-    let [body @ Stmt::Assign(ast::StmtAssign {
-        targets: body_targets,
-        value: body_value,
-        ..
-    })] = body.as_slice()
+    let [
+        body @ Stmt::Assign(ast::StmtAssign {
+            targets: body_targets,
+            value: body_value,
+            ..
+        }),
+    ] = body.as_slice()
     else {
         return;
     };
@@ -106,52 +121,44 @@ pub(crate) fn if_stmt_min_max(checker: &mut Checker, stmt_if: &ast::StmtIf) {
     let [op] = &**ops else {
         return;
     };
-
     let [right] = &**comparators else {
         return;
     };
 
-    let left_cmp = ComparableExpr::from(left);
-    let body_target_cmp = ComparableExpr::from(body_target);
-    let right_cmp = ComparableExpr::from(right);
-    let body_value_cmp = ComparableExpr::from(body_value);
+    // extract helpful info from expression of the form
+    // `if cmp_left op cmp_right: target = assignment_value`
+    let cmp_left = ComparableExpr::from(left);
+    let cmp_right = ComparableExpr::from(right);
+    let target = ComparableExpr::from(body_target);
+    let assignment_value = ComparableExpr::from(body_value);
 
-    let left_is_target = left_cmp == body_target_cmp;
-    let right_is_target = right_cmp == body_target_cmp;
-    let left_is_value = left_cmp == body_value_cmp;
-    let right_is_value = right_cmp == body_value_cmp;
-
-    // Determine whether to use `min()` or `max()`, and whether to flip the
-    // order of the arguments, which is relevant for breaking ties.
-    // Also ensure that we understand the operation we're trying to do,
-    // by checking both sides of the comparison and assignment.
-    let (min_max, flip_args) = match (
-        left_is_target,
-        right_is_target,
-        left_is_value,
-        right_is_value,
-    ) {
-        (true, false, false, true) => match op {
-            CmpOp::Lt => (MinMax::Max, true),
-            CmpOp::LtE => (MinMax::Max, false),
-            CmpOp::Gt => (MinMax::Min, true),
-            CmpOp::GtE => (MinMax::Min, false),
+    // Ex): if a < b: a = b
+    let (min_max, flip_args) = if cmp_left == target && cmp_right == assignment_value {
+        match op {
+            CmpOp::Lt => (MinMax::Max, false),
+            CmpOp::LtE => (MinMax::Max, true),
+            CmpOp::Gt => (MinMax::Min, false),
+            CmpOp::GtE => (MinMax::Min, true),
             _ => return,
-        },
-        (false, true, true, false) => match op {
+        }
+    }
+    // Ex): `if a < b: b = a`
+    else if cmp_left == assignment_value && cmp_right == target {
+        match op {
             CmpOp::Lt => (MinMax::Min, true),
             CmpOp::LtE => (MinMax::Min, false),
             CmpOp::Gt => (MinMax::Max, true),
             CmpOp::GtE => (MinMax::Max, false),
             _ => return,
-        },
-        _ => return,
+        }
+    } else {
+        return;
     };
 
     let (arg1, arg2) = if flip_args {
-        (left.as_ref(), right)
+        (right, &**left)
     } else {
-        (right, left.as_ref())
+        (&**left, right)
     };
 
     let replacement = format!(
@@ -177,14 +184,21 @@ pub(crate) fn if_stmt_min_max(checker: &mut Checker, stmt_if: &ast::StmtIf) {
         stmt_if.range(),
     );
 
+    let range_replacement = stmt_if.range();
+    let applicability = if checker.comment_ranges().intersects(range_replacement) {
+        Applicability::Unsafe
+    } else {
+        Applicability::Safe
+    };
+
     if checker.semantic().has_builtin_binding(min_max.as_str()) {
-        diagnostic.set_fix(Fix::safe_edit(Edit::range_replacement(
-            replacement,
-            stmt_if.range(),
-        )));
+        diagnostic.set_fix(Fix::applicable_edit(
+            Edit::range_replacement(replacement, range_replacement),
+            applicability,
+        ));
     }
 
-    checker.diagnostics.push(diagnostic);
+    checker.report_diagnostic(diagnostic);
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

@@ -1,8 +1,8 @@
 use ruff_diagnostics::{Diagnostic, Edit, Fix, FixAvailability, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast as ast;
-use ruff_python_semantic::analyze::function_type;
 use ruff_python_semantic::Scope;
+use ruff_python_semantic::analyze::function_type;
 use ruff_text_size::Ranged;
 
 use crate::checkers::ast::Checker;
@@ -42,15 +42,15 @@ use crate::importer::ImportRequest;
 /// ## Fix safety
 /// This rule's fix is marked as unsafe, as migrating from `@singledispatch` to
 /// `@singledispatchmethod` may change the behavior of the code.
-#[violation]
-pub struct SingledispatchMethod;
+#[derive(ViolationMetadata)]
+pub(crate) struct SingledispatchMethod;
 
 impl Violation for SingledispatchMethod {
     const FIX_AVAILABILITY: FixAvailability = FixAvailability::Sometimes;
 
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("`@singledispatch` decorator should not be used on methods")
+        "`@singledispatch` decorator should not be used on methods".to_string()
     }
 
     fn fix_title(&self) -> Option<String> {
@@ -59,11 +59,7 @@ impl Violation for SingledispatchMethod {
 }
 
 /// E1519
-pub(crate) fn singledispatch_method(
-    checker: &Checker,
-    scope: &Scope,
-    diagnostics: &mut Vec<Diagnostic>,
-) {
+pub(crate) fn singledispatch_method(checker: &Checker, scope: &Scope) {
     let Some(func) = scope.kind.as_function() else {
         return;
     };
@@ -115,7 +111,7 @@ pub(crate) fn singledispatch_method(
                     [import_edit],
                 ))
             });
-            diagnostics.push(diagnostic);
+            checker.report_diagnostic(diagnostic);
         }
     }
 }

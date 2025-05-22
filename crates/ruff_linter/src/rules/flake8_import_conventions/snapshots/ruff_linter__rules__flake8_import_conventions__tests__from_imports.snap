@@ -83,9 +83,7 @@ from_imports.py:10:57: ICN001 `xml.dom.minidom.parseString` should be imported a
  9 | from xml.dom.minidom import parse, parseString
 10 | from xml.dom.minidom import parse as ps, parseString as wrong
    |                                                         ^^^^^ ICN001
-11 | 
+11 |
 12 | # No ICN001 violations
    |
    = help: Alias `xml.dom.minidom.parseString` to `pstr`
-
-

@@ -1,9 +1,10 @@
-use lsp_types::{self as types, request as req, Range};
+use anyhow::Context;
+use lsp_types::{self as types, Range, request as req};
 
 use crate::edit::{RangeExt, ToRangeExt};
-use crate::resolve::is_document_excluded;
+use crate::resolve::is_document_excluded_for_formatting;
 use crate::server::api::LSPResult;
-use crate::server::{client::Notifier, Result};
+use crate::server::{Result, client::Notifier};
 use crate::session::{DocumentQuery, DocumentSnapshot};
 use crate::{PositionEncoding, TextDocument};
 
@@ -32,7 +33,8 @@ fn format_document_range(
     let text_document = snapshot
         .query()
         .as_single_document()
-        .expect("format should only be called on text documents or notebook cells");
+        .context("Failed to get text document for the format range request")
+        .unwrap();
     let query = snapshot.query();
     format_text_document_range(text_document, range, query, snapshot.encoding())
 }
@@ -44,16 +46,15 @@ fn format_text_document_range(
     query: &DocumentQuery,
     encoding: PositionEncoding,
 ) -> Result<super::FormatResponse> {
-    let file_resolver_settings = query.settings().file_resolver();
-    let formatter_settings = query.settings().formatter();
+    let settings = query.settings();
 
     // If the document is excluded, return early.
-    if let Some(file_path) = query.file_path() {
-        if is_document_excluded(
-            &file_path,
-            file_resolver_settings,
-            None,
-            Some(formatter_settings),
+    let file_path = query.file_path();
+    if let Some(file_path) = &file_path {
+        if is_document_excluded_for_formatting(
+            file_path,
+            &settings.file_resolver,
+            &settings.formatter,
             text_document.language_id(),
         ) {
             return Ok(None);
@@ -66,8 +67,9 @@ fn format_text_document_range(
     let formatted_range = crate::format::format_range(
         text_document,
         query.source_type(),
-        formatter_settings,
+        &settings.formatter,
         range,
+        file_path.as_deref(),
     )
     .with_failure_code(lsp_server::ErrorCode::InternalError)?;
 

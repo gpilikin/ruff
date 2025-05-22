@@ -1,11 +1,17 @@
 use anyhow::Result;
+use std::sync::Arc;
 use zip::CompressionMethod;
 
-use red_knot_python_semantic::{Db, Program, ProgramSettings, PythonVersion, SearchPathSettings};
 use ruff_db::files::{File, Files};
 use ruff_db::system::{OsSystem, System, SystemPathBuf};
 use ruff_db::vendored::{VendoredFileSystem, VendoredFileSystemBuilder};
 use ruff_db::{Db as SourceDb, Upcast};
+use ruff_python_ast::PythonVersion;
+use ty_python_semantic::lint::{LintRegistry, RuleSelection};
+use ty_python_semantic::{
+    Db, Program, ProgramSettings, PythonPath, PythonPlatform, PythonVersionSource,
+    PythonVersionWithSource, SearchPathSettings, default_lint_registry,
+};
 
 static EMPTY_VENDORED: std::sync::LazyLock<VendoredFileSystem> = std::sync::LazyLock::new(|| {
     let mut builder = VendoredFileSystemBuilder::new(CompressionMethod::Stored);
@@ -14,53 +20,40 @@ static EMPTY_VENDORED: std::sync::LazyLock<VendoredFileSystem> = std::sync::Lazy
 });
 
 #[salsa::db]
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ModuleDb {
     storage: salsa::Storage<Self>,
     files: Files,
     system: OsSystem,
+    rule_selection: Arc<RuleSelection>,
 }
 
 impl ModuleDb {
     /// Initialize a [`ModuleDb`] from the given source root.
     pub fn from_src_roots(
-        mut src_roots: impl Iterator<Item = SystemPathBuf>,
-        target_version: PythonVersion,
+        src_roots: Vec<SystemPathBuf>,
+        python_version: PythonVersion,
+        venv_path: Option<SystemPathBuf>,
     ) -> Result<Self> {
-        let search_paths = {
-            // Use the first source root.
-            let src_root = src_roots
-                .next()
-                .ok_or_else(|| anyhow::anyhow!("No source roots provided"))?;
-
-            let mut search_paths = SearchPathSettings::new(src_root);
-
-            // Add the remaining source roots as extra paths.
-            search_paths.extra_paths.extend(src_roots);
-
-            search_paths
-        };
+        let mut search_paths = SearchPathSettings::new(src_roots);
+        if let Some(venv_path) = venv_path {
+            search_paths.python_path = PythonPath::from_cli_flag(venv_path);
+        }
 
         let db = Self::default();
         Program::from_settings(
             &db,
-            &ProgramSettings {
-                target_version,
+            ProgramSettings {
+                python_version: PythonVersionWithSource {
+                    version: python_version,
+                    source: PythonVersionSource::default(),
+                },
+                python_platform: PythonPlatform::default(),
                 search_paths,
             },
         )?;
 
         Ok(db)
-    }
-
-    /// Create a snapshot of the current database.
-    #[must_use]
-    pub fn snapshot(&self) -> Self {
-        Self {
-            storage: self.storage.clone(),
-            system: self.system.clone(),
-            files: self.files.snapshot(),
-        }
     }
 }
 
@@ -86,6 +79,10 @@ impl SourceDb for ModuleDb {
     fn files(&self) -> &Files {
         &self.files
     }
+
+    fn python_version(&self) -> PythonVersion {
+        Program::get(self).python_version(self)
+    }
 }
 
 #[salsa::db]
@@ -93,9 +90,15 @@ impl Db for ModuleDb {
     fn is_file_open(&self, file: File) -> bool {
         !file.path(self).is_vendored_path()
     }
+
+    fn rule_selection(&self) -> &RuleSelection {
+        &self.rule_selection
+    }
+
+    fn lint_registry(&self) -> &LintRegistry {
+        default_lint_registry()
+    }
 }
 
 #[salsa::db]
-impl salsa::Database for ModuleDb {
-    fn salsa_event(&self, _event: &dyn Fn() -> salsa::Event) {}
-}
+impl salsa::Database for ModuleDb {}

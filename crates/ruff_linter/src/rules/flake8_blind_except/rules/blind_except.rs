@@ -1,10 +1,10 @@
 use ruff_diagnostics::{Diagnostic, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::helpers::is_const_true;
-use ruff_python_ast::statement_visitor::{walk_stmt, StatementVisitor};
+use ruff_python_ast::statement_visitor::{StatementVisitor, walk_stmt};
 use ruff_python_ast::{self as ast, Expr, Stmt};
-use ruff_python_semantic::analyze::logging;
 use ruff_python_semantic::SemanticModel;
+use ruff_python_semantic::analyze::logging;
 use ruff_text_size::Ranged;
 
 use crate::checkers::ast::Checker;
@@ -60,9 +60,9 @@ use crate::checkers::ast::Checker;
 /// ## References
 /// - [Python documentation: The `try` statement](https://docs.python.org/3/reference/compound_stmts.html#the-try-statement)
 /// - [Python documentation: Exception hierarchy](https://docs.python.org/3/library/exceptions.html#exception-hierarchy)
-/// - [PEP8 Programming Recommendations on bare `except`](https://peps.python.org/pep-0008/#programming-recommendations)
-#[violation]
-pub struct BlindExcept {
+/// - [PEP 8: Programming Recommendations on bare `except`](https://peps.python.org/pep-0008/#programming-recommendations)
+#[derive(ViolationMetadata)]
+pub(crate) struct BlindExcept {
     name: String,
 }
 
@@ -76,7 +76,7 @@ impl Violation for BlindExcept {
 
 /// BLE001
 pub(crate) fn blind_except(
-    checker: &mut Checker,
+    checker: &Checker,
     type_: Option<&Expr>,
     name: Option<&str>,
     body: &[Stmt],
@@ -107,7 +107,7 @@ pub(crate) fn blind_except(
         return;
     }
 
-    checker.diagnostics.push(Diagnostic::new(
+    checker.report_diagnostic(Diagnostic::new(
         BlindExcept {
             name: builtin_exception_type.to_string(),
         },

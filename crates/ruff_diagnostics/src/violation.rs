@@ -17,7 +17,16 @@ impl Display for FixAvailability {
     }
 }
 
-pub trait Violation: Debug + PartialEq + Eq {
+pub trait ViolationMetadata {
+    /// Returns the rule name of this violation
+    fn rule_name() -> &'static str;
+
+    /// Returns an explanation of what this violation catches,
+    /// why it's bad, and what users should do instead.
+    fn explain() -> Option<&'static str>;
+}
+
+pub trait Violation: ViolationMetadata {
     /// `None` in the case a fix is never available or otherwise Some
     /// [`FixAvailability`] describing the available fix.
     const FIX_AVAILABILITY: FixAvailability = FixAvailability::None;
@@ -41,7 +50,7 @@ pub trait Violation: Debug + PartialEq + Eq {
 
 /// This trait exists just to make implementing the [`Violation`] trait more
 /// convenient for violations that can always be fixed.
-pub trait AlwaysFixableViolation: Debug + PartialEq + Eq {
+pub trait AlwaysFixableViolation: ViolationMetadata {
     /// The message used to describe the violation.
     fn message(&self) -> String;
 

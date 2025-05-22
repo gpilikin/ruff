@@ -10,30 +10,30 @@ use ruff_python_codegen::Stylist;
 use ruff_python_index::Indexer;
 use ruff_python_trivia::textwrap::dedent_to;
 use ruff_python_trivia::{
-    has_leading_content, is_python_whitespace, CommentRanges, PythonWhitespace, SimpleTokenKind,
-    SimpleTokenizer,
+    CommentRanges, PythonWhitespace, SimpleTokenKind, SimpleTokenizer, has_leading_content,
+    is_python_whitespace,
 };
 use ruff_source_file::{LineRanges, NewlineWithTrailingNewline, UniversalNewlines};
 use ruff_text_size::{Ranged, TextLen, TextRange, TextSize};
 
+use crate::Locator;
 use crate::cst::matchers::{match_function_def, match_indented_block, match_statement};
 use crate::fix::codemods;
 use crate::fix::codemods::CodegenStylist;
 use crate::line_width::{IndentWidth, LineLength, LineWidthBuilder};
-use crate::Locator;
 
-/// Return the `Fix` to use when deleting a `Stmt`.
+/// Return the [`Edit`] to use when deleting a [`Stmt`].
 ///
-/// In some cases, this is as simple as deleting the `Range` of the `Stmt`
+/// In some cases, this is as simple as deleting the [`TextRange`] of the [`Stmt`]
 /// itself. However, there are a few exceptions:
-/// - If the `Stmt` is _not_ the terminal statement in a multi-statement line,
+/// - If the [`Stmt`] is _not_ the terminal statement in a multi-statement line,
 ///   we need to delete up to the start of the next statement (and avoid
 ///   deleting any content that precedes the statement).
-/// - If the `Stmt` is the terminal statement in a multi-statement line, we need
+/// - If the [`Stmt`] is the terminal statement in a multi-statement line, we need
 ///   to avoid deleting any content that precedes the statement.
-/// - If the `Stmt` has no trailing and leading content, then it's convenient to
+/// - If the [`Stmt`] has no trailing and leading content, then it's convenient to
 ///   remove the entire start and end lines.
-/// - If the `Stmt` is the last statement in its parent body, replace it with a
+/// - If the [`Stmt`] is the last statement in its parent body, replace it with a
 ///   `pass` instead.
 pub(crate) fn delete_stmt(
     stmt: &Stmt,
@@ -288,11 +288,11 @@ pub(crate) fn add_parameter(parameter: &str, parameters: &Parameters, source: &s
         .args
         .iter()
         .filter(|arg| arg.default.is_none())
-        .last()
+        .next_back()
     {
         // Case 1: at least one regular parameter, so append after the last one.
         Edit::insertion(format!(", {parameter}"), last.end())
-    } else if parameters.args.first().is_some() {
+    } else if !parameters.args.is_empty() {
         // Case 2: no regular parameters, but at least one keyword parameter, so add before the
         // first.
         let pos = parameters.start();
@@ -316,7 +316,7 @@ pub(crate) fn add_parameter(parameter: &str, parameters: &Parameters, source: &s
         } else {
             Edit::insertion(format!(", {parameter}"), slash.start())
         }
-    } else if parameters.kwonlyargs.first().is_some() {
+    } else if !parameters.kwonlyargs.is_empty() {
         // Case 3: no regular parameter, but a keyword-only parameter exist, so add parameter before that.
         // We need to backtrack to before the `*` separator.
         // We know there is no non-keyword-only params, so we can safely assume that the `*` separator is the first
@@ -591,7 +591,8 @@ fn all_lines_fit(
 
 #[cfg(test)]
 mod tests {
-    use anyhow::{anyhow, Result};
+    use anyhow::{Result, anyhow};
+    use ruff_source_file::SourceFileBuilder;
     use test_case::test_case;
 
     use ruff_diagnostics::{Diagnostic, Edit, Fix};
@@ -600,11 +601,12 @@ mod tests {
     use ruff_python_parser::{parse_expression, parse_module};
     use ruff_text_size::{Ranged, TextRange, TextSize};
 
+    use crate::Locator;
     use crate::fix::apply_fixes;
     use crate::fix::edits::{
         add_to_dunder_all, make_redundant_alias, next_stmt_break, trailing_semicolon,
     };
-    use crate::Locator;
+    use crate::message::Message;
 
     /// Parse the given source using [`Mode::Module`] and return the first statement.
     fn parse_first_stmt(source: &str) -> Result<Stmt> {
@@ -735,14 +737,24 @@ x = 1 \
         let diag = {
             use crate::rules::pycodestyle::rules::MissingNewlineAtEndOfFile;
             let mut iter = edits.into_iter();
-            Diagnostic::new(
+            let diag = Diagnostic::new(
                 MissingNewlineAtEndOfFile, // The choice of rule here is arbitrary.
                 TextRange::default(),
             )
             .with_fix(Fix::safe_edits(
                 iter.next().ok_or(anyhow!("expected edits nonempty"))?,
                 iter,
-            ))
+            ));
+            Message::diagnostic(
+                diag.name,
+                diag.body,
+                diag.suggestion,
+                diag.range,
+                diag.fix,
+                diag.parent,
+                SourceFileBuilder::new("<filename>", "<code>").finish(),
+                None,
+            )
         };
         assert_eq!(apply_fixes([diag].iter(), &locator).code, expect);
         Ok(())

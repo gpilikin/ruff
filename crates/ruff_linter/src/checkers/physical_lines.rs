@@ -6,6 +6,7 @@ use ruff_python_index::Indexer;
 use ruff_source_file::UniversalNewlines;
 use ruff_text_size::TextSize;
 
+use crate::Locator;
 use crate::registry::Rule;
 use crate::rules::flake8_copyright::rules::missing_copyright_notice;
 use crate::rules::pycodestyle::rules::{
@@ -13,8 +14,8 @@ use crate::rules::pycodestyle::rules::{
     trailing_whitespace,
 };
 use crate::rules::pylint;
+use crate::rules::ruff::rules::indented_form_feed;
 use crate::settings::LinterSettings;
-use crate::Locator;
 
 pub(crate) fn check_physical_lines(
     locator: &Locator,
@@ -71,6 +72,12 @@ pub(crate) fn check_physical_lines(
                 diagnostics.push(diagnostic);
             }
         }
+
+        if settings.rules.enabled(Rule::IndentedFormFeed) {
+            if let Some(diagnostic) = indented_form_feed(&line) {
+                diagnostics.push(diagnostic);
+            }
+        }
     }
 
     if enforce_no_newline_at_end_of_file {
@@ -94,11 +101,11 @@ mod tests {
     use ruff_python_index::Indexer;
     use ruff_python_parser::parse_module;
 
+    use crate::Locator;
     use crate::line_width::LineLength;
     use crate::registry::Rule;
     use crate::rules::pycodestyle;
     use crate::settings::LinterSettings;
-    use crate::Locator;
 
     use super::check_physical_lines;
 

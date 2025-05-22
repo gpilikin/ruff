@@ -11,25 +11,25 @@ use log::{debug, error, warn};
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
 
+use ruff_db::panic::catch_unwind;
 use ruff_diagnostics::Diagnostic;
 use ruff_linter::message::Message;
+use ruff_linter::package::PackageRoot;
 use ruff_linter::registry::Rule;
 use ruff_linter::settings::types::UnsafeFixes;
-use ruff_linter::settings::{flags, LinterSettings};
-use ruff_linter::{fs, warn_user_once, IOError};
+use ruff_linter::settings::{LinterSettings, flags};
+use ruff_linter::{IOError, fs, warn_user_once};
 use ruff_source_file::SourceFileBuilder;
-use ruff_text_size::{TextRange, TextSize};
+use ruff_text_size::TextRange;
 use ruff_workspace::resolver::{
-    match_exclusion, python_files_in_path, PyprojectConfig, ResolvedFile,
+    PyprojectConfig, ResolvedFile, match_exclusion, python_files_in_path,
 };
 
 use crate::args::ConfigArguments;
 use crate::cache::{Cache, PackageCacheMap, PackageCaches};
 use crate::diagnostics::Diagnostics;
-use crate::panic::catch_unwind;
 
 /// Run the linter over a collection of files.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn check(
     files: &[PathBuf],
     pyproject_config: &PyprojectConfig,
@@ -87,7 +87,9 @@ pub(crate) fn check(
                     return None;
                 }
 
-                let cache_root = package.unwrap_or_else(|| path.parent().unwrap_or(path));
+                let cache_root = package
+                    .map(PackageRoot::path)
+                    .unwrap_or_else(|| path.parent().unwrap_or(path));
                 let cache = caches.get(cache_root);
 
                 lint_path(
@@ -131,7 +133,7 @@ pub(crate) fn check(
                         vec![Message::from_diagnostic(
                             Diagnostic::new(IOError { message }, TextRange::default()),
                             dummy,
-                            TextSize::default(),
+                            None,
                         )],
                         FxHashMap::default(),
                     )
@@ -171,17 +173,16 @@ pub(crate) fn check(
     caches.persist()?;
 
     let duration = start.elapsed();
-    debug!("Checked {:?} files in: {:?}", checked_files, duration);
+    debug!("Checked {checked_files:?} files in: {duration:?}");
 
     Ok(all_diagnostics)
 }
 
 /// Wraps [`lint_path`](crate::diagnostics::lint_path) in a [`catch_unwind`](std::panic::catch_unwind) and emits
 /// a diagnostic if the linting the file panics.
-#[allow(clippy::too_many_arguments)]
 fn lint_path(
     path: &Path,
-    package: Option<&Path>,
+    package: Option<PackageRoot<'_>>,
     settings: &LinterSettings,
     cache: Option<&Cache>,
     noqa: flags::Noqa,
@@ -227,9 +228,9 @@ mod test {
     use ruff_linter::message::{Emitter, EmitterContext, TextEmitter};
     use ruff_linter::registry::Rule;
     use ruff_linter::settings::types::UnsafeFixes;
-    use ruff_linter::settings::{flags, LinterSettings};
-    use ruff_workspace::resolver::{PyprojectConfig, PyprojectDiscoveryStrategy};
+    use ruff_linter::settings::{LinterSettings, flags};
     use ruff_workspace::Settings;
+    use ruff_workspace::resolver::{PyprojectConfig, PyprojectDiscoveryStrategy};
 
     use crate::args::ConfigArguments;
 

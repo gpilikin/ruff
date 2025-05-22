@@ -3,13 +3,13 @@ use std::fmt::Debug;
 
 use ruff_diagnostics::Diagnostic;
 use ruff_diagnostics::Violation;
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::comparable::ComparableExpr;
 use ruff_python_ast::name::UnqualifiedName;
 use ruff_python_ast::{
-    visitor::{self, Visitor},
     Expr, ExprAttribute, ExprCall, ExprSubscript, ExprTuple, Stmt, StmtAssign, StmtAugAssign,
     StmtDelete, StmtFor, StmtIf,
+    visitor::{self, Visitor},
 };
 use ruff_text_size::TextRange;
 
@@ -36,26 +36,24 @@ use crate::fix::snippet::SourceCodeSnippet;
 ///
 /// ## References
 /// - [Python documentation: Mutable Sequence Types](https://docs.python.org/3/library/stdtypes.html#typesseq-mutable)
-#[violation]
-pub struct LoopIteratorMutation {
+#[derive(ViolationMetadata)]
+pub(crate) struct LoopIteratorMutation {
     name: Option<SourceCodeSnippet>,
 }
 
 impl Violation for LoopIteratorMutation {
     #[derive_message_formats]
     fn message(&self) -> String {
-        let LoopIteratorMutation { name } = self;
-
-        if let Some(name) = name.as_ref().and_then(SourceCodeSnippet::full_display) {
+        if let Some(name) = self.name.as_ref().and_then(SourceCodeSnippet::full_display) {
             format!("Mutation to loop iterable `{name}` during iteration")
         } else {
-            format!("Mutation to loop iterable during iteration")
+            "Mutation to loop iterable during iteration".to_string()
         }
     }
 }
 
 /// B909
-pub(crate) fn loop_iterator_mutation(checker: &mut Checker, stmt_for: &StmtFor) {
+pub(crate) fn loop_iterator_mutation(checker: &Checker, stmt_for: &StmtFor) {
     let StmtFor {
         target,
         iter,
@@ -112,9 +110,7 @@ pub(crate) fn loop_iterator_mutation(checker: &mut Checker, stmt_for: &StmtFor) 
         let name = UnqualifiedName::from_expr(iter)
             .map(|name| name.to_string())
             .map(SourceCodeSnippet::new);
-        checker
-            .diagnostics
-            .push(Diagnostic::new(LoopIteratorMutation { name }, *mutation));
+        checker.report_diagnostic(Diagnostic::new(LoopIteratorMutation { name }, *mutation));
     }
 }
 

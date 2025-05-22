@@ -1,21 +1,27 @@
 use std::borrow::Cow;
 use std::iter;
+use unicode_normalization::UnicodeNormalization;
 
-use anyhow::{anyhow, bail, Result};
-use std::collections::BTreeMap;
+use anyhow::{Result, anyhow, bail};
+use std::collections::{BTreeMap, HashSet};
 
 use ruff_diagnostics::{Applicability, Diagnostic, Fix, FixAvailability, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::name::QualifiedName;
 use ruff_python_ast::{self as ast, Stmt};
 use ruff_python_semantic::{
-    AnyImport, BindingKind, Exceptions, Imported, NodeId, Scope, SemanticModel, SubmoduleImport,
+    AnyImport, BindingKind, Exceptions, Imported, NodeId, Scope, ScopeId, SemanticModel,
+    SubmoduleImport,
 };
 use ruff_text_size::{Ranged, TextRange};
 
 use crate::checkers::ast::Checker;
 use crate::fix;
+use crate::preview::{
+    is_dunder_init_fix_unused_import_enabled, is_full_path_match_source_strategy_enabled,
+};
 use crate::registry::Rule;
+use crate::rules::isort::categorize::MatchSourceStrategy;
 use crate::rules::{isort, isort::ImportSection, isort::ImportType};
 
 /// ## What it does
@@ -86,15 +92,21 @@ use crate::rules::{isort, isort::ImportSection, isort::ImportType};
 ///     print("numpy is not installed")
 /// ```
 ///
+/// ## Preview
+/// When [preview](https://docs.astral.sh/ruff/preview/) is enabled,
+/// the criterion for determining whether an import is first-party
+/// is stricter, which could affect the suggested fix. See [this FAQ section](https://docs.astral.sh/ruff/faq/#how-does-ruff-determine-which-of-my-imports-are-first-party-third-party-etc) for more details.
+///
 /// ## Options
 /// - `lint.ignore-init-module-imports`
+/// - `lint.pyflakes.allowed-unused-imports`
 ///
 /// ## References
 /// - [Python documentation: `import`](https://docs.python.org/3/reference/simple_stmts.html#the-import-statement)
 /// - [Python documentation: `importlib.util.find_spec`](https://docs.python.org/3/library/importlib.html#importlib.util.find_spec)
-/// - [Typing documentation: interface conventions](https://typing.readthedocs.io/en/latest/source/libraries.html#library-interface-public-and-private-symbols)
-#[violation]
-pub struct UnusedImport {
+/// - [Typing documentation: interface conventions](https://typing.python.org/en/latest/source/libraries.html#library-interface-public-and-private-symbols)
+#[derive(ViolationMetadata)]
+pub(crate) struct UnusedImport {
     /// Qualified name of the import
     name: String,
     /// Unqualified name of the import
@@ -147,12 +159,12 @@ impl Violation for UnusedImport {
                     submodule_import: true,
                 } => {
                     return Some(format!(
-                    "Use an explicit re-export: `import {parent} as {parent}; import {binding}`",
-                    parent = binding
-                        .split('.')
-                        .next()
-                        .expect("Expected all submodule imports to contain a '.'")
-                    ))
+                        "Use an explicit re-export: `import {parent} as {parent}; import {binding}`",
+                        parent = binding
+                            .split('.')
+                            .next()
+                            .expect("Expected all submodule imports to contain a '.'")
+                    ));
                 }
                 UnusedImportContext::DunderInitFirstParty {
                     dunder_all_count: DunderAllCount::One,
@@ -168,7 +180,7 @@ impl Violation for UnusedImport {
                             .split('.')
                             .next()
                             .expect("Expected all submodule imports to contain a '.'")
-                    ))
+                    ));
                 }
                 UnusedImportContext::DunderInitFirstParty {
                     dunder_all_count: DunderAllCount::Many,
@@ -219,18 +231,24 @@ enum UnusedImportContext {
 }
 
 fn is_first_party(import: &AnyImport, checker: &Checker) -> bool {
-    let qualified_name = import.qualified_name();
+    let source_name = import.source_name().join(".");
+    let match_source_strategy = if is_full_path_match_source_strategy_enabled(checker.settings) {
+        MatchSourceStrategy::FullPath
+    } else {
+        MatchSourceStrategy::Root
+    };
     let category = isort::categorize(
-        &qualified_name.to_string(),
-        qualified_name.is_unresolved_import(),
+        &source_name,
+        import.qualified_name().is_unresolved_import(),
         &checker.settings.src,
         checker.package(),
         checker.settings.isort.detect_same_package,
         &checker.settings.isort.known_modules,
-        checker.settings.target_version,
+        checker.target_version(),
         checker.settings.isort.no_sections,
         &checker.settings.isort.section_order,
         &checker.settings.isort.default_section,
+        match_source_strategy,
     );
     matches! {
         category,
@@ -271,85 +289,106 @@ fn find_dunder_all_exprs<'a>(semantic: &'a SemanticModel) -> Vec<&'a ast::Expr> 
 /// ¬__init__.py ∧ stdlib → safe,   remove
 /// ¬__init__.py ∧ 3rdpty → safe,   remove
 ///
-pub(crate) fn unused_import(checker: &Checker, scope: &Scope, diagnostics: &mut Vec<Diagnostic>) {
+pub(crate) fn unused_import(checker: &Checker, scope: &Scope) {
     // Collect all unused imports by statement.
     let mut unused: BTreeMap<(NodeId, Exceptions), Vec<ImportBinding>> = BTreeMap::default();
     let mut ignored: BTreeMap<(NodeId, Exceptions), Vec<ImportBinding>> = BTreeMap::default();
+    let mut already_checked_imports: HashSet<&str> = HashSet::new();
 
     for binding_id in scope.binding_ids() {
-        let binding = checker.semantic().binding(binding_id);
+        let top_binding = checker.semantic().binding(binding_id);
 
-        if binding.is_used()
-            || binding.is_explicit_export()
-            || binding.is_nonlocal()
-            || binding.is_global()
-        {
-            continue;
-        }
-
-        let Some(import) = binding.as_any_import() else {
+        let Some(_) = top_binding.as_any_import() else {
             continue;
         };
 
-        let Some(node_id) = binding.source else {
-            continue;
-        };
+        let binding_name = top_binding
+            .name(checker.source())
+            .split('.')
+            .next()
+            .unwrap_or("");
 
-        let name = binding.name(checker.source());
-
-        // If an import is marked as required, avoid treating it as unused, regardless of whether
-        // it was _actually_ used.
-        if checker
-            .settings
-            .isort
-            .required_imports
-            .iter()
-            .any(|required_import| required_import.matches(name, &import))
+        for binding in scope
+            .get_all(&binding_name.nfkc().collect::<String>())
+            .map(|binding_id| checker.semantic().binding(binding_id))
         {
-            continue;
-        }
+            let name = binding.name(checker.source());
 
-        // If an import was marked as allowed, avoid treating it as unused.
-        if checker
-            .settings
-            .pyflakes
-            .allowed_unused_imports
-            .iter()
-            .any(|allowed_unused_import| {
-                let allowed_unused_import = QualifiedName::from_dotted_name(allowed_unused_import);
-                import.qualified_name().starts_with(&allowed_unused_import)
-            })
-        {
-            continue;
-        }
+            if already_checked_imports.contains(&name) {
+                continue;
+            }
+            {
+                already_checked_imports.insert(name);
+            }
 
-        let import = ImportBinding {
-            name,
-            import,
-            range: binding.range(),
-            parent_range: binding.parent_range(checker.semantic()),
-        };
+            if binding.is_used()
+                || binding.is_explicit_export()
+                || binding.is_nonlocal()
+                || binding.is_global()
+            {
+                continue;
+            }
 
-        if checker.rule_is_ignored(Rule::UnusedImport, import.start())
-            || import.parent_range.is_some_and(|parent_range| {
-                checker.rule_is_ignored(Rule::UnusedImport, parent_range.start())
-            })
-        {
-            ignored
-                .entry((node_id, binding.exceptions))
-                .or_default()
-                .push(import);
-        } else {
-            unused
-                .entry((node_id, binding.exceptions))
-                .or_default()
-                .push(import);
+            let Some(import) = binding.as_any_import() else {
+                continue;
+            };
+
+            let Some(stmt_id) = binding.source else {
+                continue;
+            };
+
+            // If an import is marked as required, avoid treating it as unused, regardless of whether
+            // it was _actually_ used.
+            if checker
+                .settings
+                .isort
+                .required_imports
+                .iter()
+                .any(|required_import| required_import.matches(name, &import))
+            {
+                continue;
+            }
+
+            // If an import was marked as allowed, avoid treating it as unused.
+            if checker.settings.pyflakes.allowed_unused_imports.iter().any(
+                |allowed_unused_import| {
+                    let allowed_unused_import =
+                        QualifiedName::from_dotted_name(allowed_unused_import);
+                    import.qualified_name().starts_with(&allowed_unused_import)
+                },
+            ) {
+                continue;
+            }
+
+            let import = ImportBinding {
+                name,
+                import,
+                range: binding.range(),
+                parent_range: binding.parent_range(checker.semantic()),
+                scope: binding.scope,
+            };
+
+            if checker.rule_is_ignored(Rule::UnusedImport, import.start())
+                || import.parent_range.is_some_and(|parent_range| {
+                    checker.rule_is_ignored(Rule::UnusedImport, parent_range.start())
+                })
+            {
+                ignored
+                    .entry((stmt_id, binding.exceptions))
+                    .or_default()
+                    .push(import);
+            } else {
+                unused
+                    .entry((stmt_id, binding.exceptions))
+                    .or_default()
+                    .push(import);
+            }
         }
     }
 
     let in_init = checker.path().ends_with("__init__.py");
     let fix_init = !checker.settings.ignore_init_module_imports;
-    let preview_mode = checker.settings.preview.is_enabled();
+    let preview_mode = is_dunder_init_fix_unused_import_enabled(checker.settings);
     let dunder_all_exprs = find_dunder_all_exprs(checker.semantic());
 
     // Generate a diagnostic for every import, but share fixes across all imports within the same
@@ -365,7 +404,10 @@ pub(crate) fn unused_import(checker: &Checker, scope: &Scope, diagnostics: &mut 
             .map(|binding| {
                 let context = if in_except_handler {
                     UnusedImportContext::ExceptHandler
-                } else if in_init && is_first_party(&binding.import, checker) {
+                } else if in_init
+                    && binding.scope.is_global()
+                    && is_first_party(&binding.import, checker)
+                {
                     UnusedImportContext::DunderInitFirstParty {
                         dunder_all_count: DunderAllCount::from(dunder_all_exprs.len()),
                         submodule_import: binding.import.is_submodule_import(),
@@ -423,7 +465,7 @@ pub(crate) fn unused_import(checker: &Checker, scope: &Scope, diagnostics: &mut 
                     diagnostic.set_fix(fix.clone());
                 }
             }
-            diagnostics.push(diagnostic);
+            checker.report_diagnostic(diagnostic);
         }
     }
 
@@ -444,7 +486,7 @@ pub(crate) fn unused_import(checker: &Checker, scope: &Scope, diagnostics: &mut 
         if let Some(range) = binding.parent_range {
             diagnostic.set_parent(range.start());
         }
-        diagnostics.push(diagnostic);
+        checker.report_diagnostic(diagnostic);
     }
 }
 
@@ -459,9 +501,11 @@ struct ImportBinding<'a> {
     range: TextRange,
     /// The range of the import's parent statement.
     parent_range: Option<TextRange>,
+    /// The [`ScopeId`] of the scope in which the [`ImportBinding`] was defined.
+    scope: ScopeId,
 }
 
-impl<'a> ImportBinding<'a> {
+impl ImportBinding<'_> {
     /// The symbol that is stored in the outer scope as a result of this import.
     ///
     /// For example:

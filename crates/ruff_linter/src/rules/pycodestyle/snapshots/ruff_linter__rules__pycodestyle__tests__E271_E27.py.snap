@@ -195,7 +195,7 @@ E27.py:71:5: E271 [*] Multiple spaces after keyword
 70 | #: E271
 71 | type  Number = int
    |     ^^ E271
-72 | 
+72 |
 73 | #: E273
    |
    = help: Replace with single space

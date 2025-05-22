@@ -109,7 +109,7 @@ RUF017_0.py:9:1: RUF017 [*] Avoid quadratic list summation
  9 | / sum([[1, 2, 3], [4, 5, 6]],
 10 | |     [])
    | |_______^ RUF017
-11 |   
+11 |
 12 |   # OK
    |
    = help: Replace with `functools.reduce`
@@ -134,7 +134,7 @@ RUF017_0.py:9:1: RUF017 [*] Avoid quadratic list summation
 RUF017_0.py:21:5: RUF017 [*] Avoid quadratic list summation
    |
 19 |     import functools, operator
-20 | 
+20 |
 21 |     sum([x, y], [])
    |     ^^^^^^^^^^^^^^^ RUF017
    |
@@ -171,5 +171,3 @@ RUF017_0.py:26:5: RUF017 [*] Avoid quadratic list summation
 25 27 | def func():
 26    |-    sum((factor.dims for factor in bases), [])
    28 |+    functools.reduce(operator.iadd, (factor.dims for factor in bases), [])
-
-

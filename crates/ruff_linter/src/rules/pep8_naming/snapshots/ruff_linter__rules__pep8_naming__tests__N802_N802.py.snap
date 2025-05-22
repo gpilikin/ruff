@@ -32,10 +32,8 @@ N802.py:16:5: N802 Function name `BAD_FUNC` should be lowercase
 N802.py:40:9: N802 Function name `testTest` should be lowercase
    |
 38 |         return super().tearDown()
-39 | 
+39 |
 40 |     def testTest(self):
    |         ^^^^^^^^ N802
 41 |         assert True
    |
-
-

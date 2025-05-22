@@ -1,8 +1,8 @@
-use ruff_diagnostics::{Diagnostic, DiagnosticKind, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_diagnostics::{Diagnostic, Violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::{self as ast, Expr};
-use ruff_python_semantic::analyze::typing::find_assigned_value;
 use ruff_python_semantic::SemanticModel;
+use ruff_python_semantic::analyze::typing::find_assigned_value;
 use ruff_text_size::Ranged;
 
 use crate::checkers::ast::Checker;
@@ -17,7 +17,8 @@ use crate::registry::AsRule;
 /// call to complete, negating the benefits of asynchronous programming.
 ///
 /// Instead of making a blocking call, use an equivalent asynchronous library
-/// or function.
+/// or function, like [`trio.run_process()`](https://trio.readthedocs.io/en/stable/reference-io.html#trio.run_process)
+/// or [`anyio.run_process()`](https://anyio.readthedocs.io/en/latest/api.html#anyio.run_process).
 ///
 /// ## Example
 /// ```python
@@ -30,13 +31,13 @@ use crate::registry::AsRule;
 /// async def foo():
 ///     asyncio.create_subprocess_shell(cmd)
 /// ```
-#[violation]
-pub struct CreateSubprocessInAsyncFunction;
+#[derive(ViolationMetadata)]
+pub(crate) struct CreateSubprocessInAsyncFunction;
 
 impl Violation for CreateSubprocessInAsyncFunction {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("Async functions should not create subprocesses with blocking methods")
+        "Async functions should not create subprocesses with blocking methods".to_string()
     }
 }
 
@@ -49,7 +50,8 @@ impl Violation for CreateSubprocessInAsyncFunction {
 /// call to complete, negating the benefits of asynchronous programming.
 ///
 /// Instead of making a blocking call, use an equivalent asynchronous library
-/// or function.
+/// or function, like [`trio.run_process()`](https://trio.readthedocs.io/en/stable/reference-io.html#trio.run_process)
+/// or [`anyio.run_process()`](https://anyio.readthedocs.io/en/latest/api.html#anyio.run_process).
 ///
 /// ## Example
 /// ```python
@@ -62,13 +64,13 @@ impl Violation for CreateSubprocessInAsyncFunction {
 /// async def foo():
 ///     asyncio.create_subprocess_shell(cmd)
 /// ```
-#[violation]
-pub struct RunProcessInAsyncFunction;
+#[derive(ViolationMetadata)]
+pub(crate) struct RunProcessInAsyncFunction;
 
 impl Violation for RunProcessInAsyncFunction {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("Async functions should not run processes with blocking methods")
+        "Async functions should not run processes with blocking methods".to_string()
     }
 }
 
@@ -81,7 +83,8 @@ impl Violation for RunProcessInAsyncFunction {
 /// call to complete, negating the benefits of asynchronous programming.
 ///
 /// Instead of making a blocking call, use an equivalent asynchronous library
-/// or function.
+/// or function, like [`trio.to_thread.run_sync()`](https://trio.readthedocs.io/en/latest/reference-core.html#trio.to_thread.run_sync)
+/// or [`anyio.to_thread.run_sync()`](https://anyio.readthedocs.io/en/latest/api.html#anyio.to_thread.run_sync).
 ///
 /// ## Example
 /// ```python
@@ -98,57 +101,63 @@ impl Violation for RunProcessInAsyncFunction {
 /// async def foo():
 ///     await asyncio.loop.run_in_executor(None, wait_for_process)
 /// ```
-#[violation]
-pub struct WaitForProcessInAsyncFunction;
+#[derive(ViolationMetadata)]
+pub(crate) struct WaitForProcessInAsyncFunction;
 
 impl Violation for WaitForProcessInAsyncFunction {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("Async functions should not wait on processes with blocking methods")
+        "Async functions should not wait on processes with blocking methods".to_string()
     }
 }
 
 /// ASYNC220, ASYNC221, ASYNC222
-pub(crate) fn blocking_process_invocation(checker: &mut Checker, call: &ast::ExprCall) {
+pub(crate) fn blocking_process_invocation(checker: &Checker, call: &ast::ExprCall) {
     if !checker.semantic().in_async_context() {
         return;
     }
 
-    let Some(diagnostic_kind) =
-        checker
-            .semantic()
-            .resolve_qualified_name(call.func.as_ref())
-            .and_then(|qualified_name| match qualified_name.segments() {
-                ["subprocess", "Popen"] | ["os", "popen"] => {
-                    Some(CreateSubprocessInAsyncFunction.into())
-                }
-                ["os", "system" | "posix_spawn" | "posix_spawnp"]
-                | ["subprocess", "run" | "call" | "check_call" | "check_output" | "getoutput"
-                | "getstatusoutput"] => Some(RunProcessInAsyncFunction.into()),
-                ["os", "wait" | "wait3" | "wait4" | "waitid" | "waitpid"] => {
-                    Some(WaitForProcessInAsyncFunction.into())
-                }
-                ["os", "spawnl" | "spawnle" | "spawnlp" | "spawnlpe" | "spawnv" | "spawnve"
-                | "spawnvp" | "spawnvpe"] => {
-                    if is_p_wait(call, checker.semantic()) {
-                        Some(RunProcessInAsyncFunction.into())
-                    } else {
-                        Some(CreateSubprocessInAsyncFunction.into())
-                    }
-                }
-                _ => None,
-            })
+    let Some(qualified_name) = checker
+        .semantic()
+        .resolve_qualified_name(call.func.as_ref())
     else {
         return;
     };
-    let diagnostic = Diagnostic::new::<DiagnosticKind>(diagnostic_kind, call.func.range());
-    if checker.enabled(diagnostic.kind.rule()) {
-        checker.diagnostics.push(diagnostic);
+
+    let range = call.func.range();
+    let diagnostic = match qualified_name.segments() {
+        ["subprocess", "Popen"] | ["os", "popen"] => {
+            Diagnostic::new(CreateSubprocessInAsyncFunction, range)
+        }
+        ["os", "system" | "posix_spawn" | "posix_spawnp"]
+        | [
+            "subprocess",
+            "run" | "call" | "check_call" | "check_output" | "getoutput" | "getstatusoutput",
+        ] => Diagnostic::new(RunProcessInAsyncFunction, range),
+        ["os", "wait" | "wait3" | "wait4" | "waitid" | "waitpid"] => {
+            Diagnostic::new(WaitForProcessInAsyncFunction, range)
+        }
+        [
+            "os",
+            "spawnl" | "spawnle" | "spawnlp" | "spawnlpe" | "spawnv" | "spawnve" | "spawnvp"
+            | "spawnvpe",
+        ] => {
+            if is_p_wait(call, checker.semantic()) {
+                Diagnostic::new(RunProcessInAsyncFunction, range)
+            } else {
+                Diagnostic::new(CreateSubprocessInAsyncFunction, range)
+            }
+        }
+        _ => return,
+    };
+
+    if checker.enabled(diagnostic.rule()) {
+        checker.report_diagnostic(diagnostic);
     }
 }
 
 fn is_p_wait(call: &ast::ExprCall, semantic: &SemanticModel) -> bool {
-    let Some(arg) = call.arguments.find_argument("mode", 0) else {
+    let Some(arg) = call.arguments.find_argument_value("mode", 0) else {
         return true;
     };
 

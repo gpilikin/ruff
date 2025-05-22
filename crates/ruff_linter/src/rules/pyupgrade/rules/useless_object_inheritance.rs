@@ -1,10 +1,10 @@
 use ruff_diagnostics::{AlwaysFixableViolation, Diagnostic, Fix};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast as ast;
 use ruff_text_size::Ranged;
 
 use crate::checkers::ast::Checker;
-use crate::fix::edits::{remove_argument, Parentheses};
+use crate::fix::edits::{Parentheses, remove_argument};
 
 /// ## What it does
 /// Checks for classes that inherit from `object`.
@@ -26,9 +26,9 @@ use crate::fix::edits::{remove_argument, Parentheses};
 /// ```
 ///
 /// ## References
-/// - [PEP 3115](https://www.python.org/dev/peps/pep-3115/)
-#[violation]
-pub struct UselessObjectInheritance {
+/// - [PEP 3115 – Metaclasses in Python 3000](https://peps.python.org/pep-3115/)
+#[derive(ViolationMetadata)]
+pub(crate) struct UselessObjectInheritance {
     name: String,
 }
 
@@ -45,7 +45,7 @@ impl AlwaysFixableViolation for UselessObjectInheritance {
 }
 
 /// UP004
-pub(crate) fn useless_object_inheritance(checker: &mut Checker, class_def: &ast::StmtClassDef) {
+pub(crate) fn useless_object_inheritance(checker: &Checker, class_def: &ast::StmtClassDef) {
     let Some(arguments) = class_def.arguments.as_deref() else {
         return;
     };
@@ -70,6 +70,6 @@ pub(crate) fn useless_object_inheritance(checker: &mut Checker, class_def: &ast:
             )
             .map(Fix::safe_edit)
         });
-        checker.diagnostics.push(diagnostic);
+        checker.report_diagnostic(diagnostic);
     }
 }

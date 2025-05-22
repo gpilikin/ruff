@@ -68,5 +68,3 @@ unused_variable.ipynb:cell 2:3:5: F841 [*] Local variable `bar2` is assigned to 
 5 5 |     bar1 = !pwd
 6   |-    bar2: str = !pwd
   6 |+    !pwd
-
-

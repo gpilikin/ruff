@@ -56,14 +56,14 @@ SIM115.py:39:9: SIM115 Use a context manager for opening files
 38 | with contextlib.ExitStack():
 39 |     f = open("filename")
    |         ^^^^ SIM115
-40 | 
+40 |
 41 | # OK
    |
 
 SIM115.py:80:5: SIM115 Use a context manager for opening files
    |
 78 | import fileinput
-79 | 
+79 |
 80 | f = tempfile.NamedTemporaryFile()
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^ SIM115
 81 | f = tempfile.TemporaryFile()
@@ -304,7 +304,7 @@ SIM115.py:104:5: SIM115 Use a context manager for opening files
 103 | f = fileinput.input("foo.txt")
 104 | f = fileinput.FileInput("foo.txt")
     |     ^^^^^^^^^^^^^^^^^^^ SIM115
-105 | 
+105 |
 106 | with contextlib.suppress(Exception):
     |
 

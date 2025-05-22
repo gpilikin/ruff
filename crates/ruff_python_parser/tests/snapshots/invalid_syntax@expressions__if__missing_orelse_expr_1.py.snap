@@ -77,6 +77,6 @@ Module(
 1 | # Missing orelse expression, followed by an expression
 2 | x if expr else
   |               ^ Syntax Error: Expected an expression
-3 | 
+3 |
 4 | 1 + 1
   |

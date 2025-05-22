@@ -26,8 +26,6 @@ F50x.py:11:1: F506 `%`-format string has mixed positional and named placeholders
 10 | '%s %s' % {'k': 'v'}  # F503
 11 | '%(bar)*s' % {'bar': 'baz'}  # F506, F508
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ F506
-12 | 
+12 |
 13 | # ok: single %s with mapping
    |
-
-

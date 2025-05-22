@@ -1,7 +1,7 @@
 use anyhow::Context;
 
 use ruff_diagnostics::{Diagnostic, Edit, Fix, FixAvailability, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast as ast;
 use ruff_python_semantic::{Scope, ScopeKind};
 use ruff_python_trivia::{indentation_at_offset, textwrap};
@@ -10,7 +10,7 @@ use ruff_text_size::Ranged;
 
 use crate::{checkers::ast::Checker, importer::ImportRequest};
 
-use super::helpers::is_dataclass;
+use super::helpers::{DataclassKind, dataclass_kind};
 
 /// ## What it does
 /// Checks for `__post_init__` dataclass methods with parameter defaults.
@@ -61,29 +61,35 @@ use super::helpers::is_dataclass;
 /// foo = Foo()  # Prints '1 2'.
 /// ```
 ///
+/// ## Fix safety
+///
+/// This fix is always marked as unsafe because, although switching to `InitVar` is usually correct,
+/// it is incorrect when the parameter is not intended to be part of the public API or when the value
+/// is meant to be shared across all instances.
+///
 /// ## References
 /// - [Python documentation: Post-init processing](https://docs.python.org/3/library/dataclasses.html#post-init-processing)
 /// - [Python documentation: Init-only variables](https://docs.python.org/3/library/dataclasses.html#init-only-variables)
 ///
 /// [documentation]: https://docs.python.org/3/library/dataclasses.html#init-only-variables
-#[violation]
-pub struct PostInitDefault;
+#[derive(ViolationMetadata)]
+pub(crate) struct PostInitDefault;
 
 impl Violation for PostInitDefault {
     const FIX_AVAILABILITY: FixAvailability = FixAvailability::Sometimes;
 
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("`__post_init__` method with argument defaults")
+        "`__post_init__` method with argument defaults".to_string()
     }
 
     fn fix_title(&self) -> Option<String> {
-        Some(format!("Use `dataclasses.InitVar` instead"))
+        Some("Use `dataclasses.InitVar` instead".to_string())
     }
 }
 
 /// RUF033
-pub(crate) fn post_init_default(checker: &mut Checker, function_def: &ast::StmtFunctionDef) {
+pub(crate) fn post_init_default(checker: &Checker, function_def: &ast::StmtFunctionDef) {
     if &function_def.name != "__post_init__" {
         return;
     }
@@ -91,7 +97,10 @@ pub(crate) fn post_init_default(checker: &mut Checker, function_def: &ast::StmtF
     let current_scope = checker.semantic().current_scope();
     match current_scope.kind {
         ScopeKind::Class(class_def) => {
-            if !is_dataclass(class_def, checker.semantic()) {
+            if !matches!(
+                dataclass_kind(class_def, checker.semantic()),
+                Some((DataclassKind::Stdlib, _))
+            ) {
                 return;
             }
         }
@@ -99,22 +108,22 @@ pub(crate) fn post_init_default(checker: &mut Checker, function_def: &ast::StmtF
     }
 
     let mut stopped_fixes = false;
-    let mut diagnostics = vec![];
 
-    for ast::ParameterWithDefault {
-        parameter,
-        default,
-        range: _,
-    } in function_def.parameters.iter_non_variadic_params()
-    {
-        let Some(default) = default else {
+    for parameter in function_def.parameters.iter_non_variadic_params() {
+        let Some(default) = parameter.default() else {
             continue;
         };
         let mut diagnostic = Diagnostic::new(PostInitDefault, default.range());
 
         if !stopped_fixes {
             diagnostic.try_set_fix(|| {
-                use_initvar(current_scope, function_def, parameter, default, checker)
+                use_initvar(
+                    current_scope,
+                    function_def,
+                    &parameter.parameter,
+                    default,
+                    checker,
+                )
             });
             // Need to stop fixes as soon as there is a parameter we cannot fix.
             // Otherwise, we risk a syntax error (a parameter without a default
@@ -122,10 +131,8 @@ pub(crate) fn post_init_default(checker: &mut Checker, function_def: &ast::StmtF
             stopped_fixes |= diagnostic.fix.is_none();
         }
 
-        diagnostics.push(diagnostic);
+        checker.report_diagnostic(diagnostic);
     }
-
-    checker.diagnostics.extend(diagnostics);
 }
 
 /// Generate a [`Fix`] to transform a `__post_init__` default argument into a
@@ -166,8 +173,7 @@ fn use_initvar(
         let line_ending = checker.stylist().line_ending().as_str();
 
         if let Some(annotation) = &parameter
-            .annotation
-            .as_deref()
+            .annotation()
             .map(|annotation| locator.slice(annotation))
         {
             format!("{parameter_name}: {initvar_binding}[{annotation}] = {default}{line_ending}")

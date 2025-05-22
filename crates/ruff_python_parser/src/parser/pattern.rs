@@ -2,11 +2,11 @@ use ruff_python_ast::name::Name;
 use ruff_python_ast::{self as ast, Expr, ExprContext, Number, Operator, Pattern, Singleton};
 use ruff_text_size::{Ranged, TextSize};
 
+use crate::ParseErrorType;
 use crate::parser::progress::ParserProgress;
-use crate::parser::{recovery, Parser, RecoveryContextKind, SequenceMatchPatternParentheses};
+use crate::parser::{Parser, RecoveryContextKind, SequenceMatchPatternParentheses, recovery};
 use crate::token::{TokenKind, TokenValue};
 use crate::token_set::TokenSet;
-use crate::ParseErrorType;
 
 use super::expression::ExpressionContext;
 
@@ -49,7 +49,7 @@ const MAPPING_PATTERN_START_SET: TokenSet = TokenSet::new([
 ])
 .union(LITERAL_PATTERN_START_SET);
 
-impl<'src> Parser<'src> {
+impl Parser<'_> {
     /// Returns `true` if the current token is a valid start of a pattern.
     pub(super) fn at_pattern_start(&self) -> bool {
         self.at_ts(PATTERN_START_SET) || self.at_soft_keyword()
@@ -488,13 +488,16 @@ impl<'src> Parser<'src> {
                         // test_ok match_as_pattern_soft_keyword
                         // match foo:
                         //     case case: ...
+                        // match foo:
                         //     case match: ...
+                        // match foo:
                         //     case type: ...
                         let ident = self.parse_identifier();
 
                         // test_ok match_as_pattern
                         // match foo:
                         //     case foo_bar: ...
+                        // match foo:
                         //     case _: ...
                         Pattern::MatchAs(ast::PatternMatchAs {
                             range: ident.range,

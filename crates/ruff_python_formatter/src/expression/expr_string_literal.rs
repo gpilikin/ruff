@@ -1,13 +1,16 @@
-use ruff_formatter::FormatRuleWithOptions;
-use ruff_python_ast::{AnyNodeRef, ExprStringLiteral, StringLike};
-
+use crate::builders::parenthesize_if_expands;
 use crate::expression::parentheses::{
-    in_parentheses_only_group, NeedsParentheses, OptionalParentheses,
+    NeedsParentheses, OptionalParentheses, in_parentheses_only_group,
 };
 use crate::other::string_literal::StringLiteralKind;
 use crate::prelude::*;
-use crate::string::implicit::FormatImplicitConcatenatedStringFlat;
-use crate::string::{implicit::FormatImplicitConcatenatedString, StringLikeExtensions};
+use crate::string::implicit::{
+    FormatImplicitConcatenatedStringExpanded, FormatImplicitConcatenatedStringFlat,
+    ImplicitConcatenatedLayout,
+};
+use crate::string::{StringLikeExtensions, implicit::FormatImplicitConcatenatedString};
+use ruff_formatter::FormatRuleWithOptions;
+use ruff_python_ast::{AnyNodeRef, ExprStringLiteral, StringLike};
 
 #[derive(Default)]
 pub struct FormatExprStringLiteral {
@@ -25,9 +28,7 @@ impl FormatRuleWithOptions<ExprStringLiteral, PyFormatContext<'_>> for FormatExp
 
 impl FormatNodeRule<ExprStringLiteral> for FormatExprStringLiteral {
     fn fmt_fields(&self, item: &ExprStringLiteral, f: &mut PyFormatter) -> FormatResult<()> {
-        let ExprStringLiteral { value, .. } = item;
-
-        if let [string_literal] = value.as_slice() {
+        if let Some(string_literal) = item.as_single_part_string() {
             string_literal.format().with_options(self.kind).fmt(f)
         } else {
             // Always join strings that aren't parenthesized and thus, always on a single line.
@@ -37,6 +38,23 @@ impl FormatNodeRule<ExprStringLiteral> for FormatExprStringLiteral {
                 {
                     format_flat.set_docstring(self.kind.is_docstring());
                     return format_flat.fmt(f);
+                }
+
+                // ```py
+                // def test():
+                // (
+                //      r"a"
+                //      "b"
+                // )
+                // ```
+                if self.kind.is_docstring() {
+                    return parenthesize_if_expands(
+                        &FormatImplicitConcatenatedStringExpanded::new(
+                            item.into(),
+                            ImplicitConcatenatedLayout::Multipart,
+                        ),
+                    )
+                    .fmt(f);
                 }
             }
 
@@ -53,7 +71,7 @@ impl NeedsParentheses for ExprStringLiteral {
     ) -> OptionalParentheses {
         if self.value.is_implicit_concatenated() {
             OptionalParentheses::Multiline
-        } else if StringLike::String(self).is_multiline(context.source()) {
+        } else if StringLike::String(self).is_multiline(context) {
             OptionalParentheses::Never
         } else {
             OptionalParentheses::BestFit

@@ -6,5 +6,3 @@ undefined_name.ipynb:cell 3:1:7: F821 Undefined name `undefined`
 1 | print(undefined)
   |       ^^^^^^^^^ F821
   |
-
-

@@ -1,8 +1,10 @@
-use ruff_diagnostics::{AlwaysFixableViolation, Diagnostic, Edit, Fix};
-use ruff_macros::{derive_message_formats, violation};
-use ruff_python_ast::{comparable::ComparableExpr, Expr};
-use ruff_text_size::Ranged;
 use rustc_hash::{FxBuildHasher, FxHashSet};
+
+use ruff_diagnostics::{AlwaysFixableViolation, Diagnostic, Edit, Fix};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
+use ruff_python_ast::Expr;
+use ruff_python_ast::comparable::HashableExpr;
+use ruff_text_size::Ranged;
 
 use crate::checkers::ast::Checker;
 
@@ -28,22 +30,22 @@ use crate::checkers::ast::Checker;
 ///
 /// ## References
 /// - [Python documentation: `set`](https://docs.python.org/3/library/stdtypes.html#set)
-#[violation]
-pub struct IterationOverSet;
+#[derive(ViolationMetadata)]
+pub(crate) struct IterationOverSet;
 
 impl AlwaysFixableViolation for IterationOverSet {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("Use a sequence type instead of a `set` when iterating over values")
+        "Use a sequence type instead of a `set` when iterating over values".to_string()
     }
 
     fn fix_title(&self) -> String {
-        format!("Convert to `tuple`")
+        "Convert to `tuple`".to_string()
     }
 }
 
 /// PLC0208
-pub(crate) fn iteration_over_set(checker: &mut Checker, expr: &Expr) {
+pub(crate) fn iteration_over_set(checker: &Checker, expr: &Expr) {
     let Expr::Set(set) = expr else {
         return;
     };
@@ -54,8 +56,7 @@ pub(crate) fn iteration_over_set(checker: &mut Checker, expr: &Expr) {
 
     let mut seen_values = FxHashSet::with_capacity_and_hasher(set.len(), FxBuildHasher);
     for value in set {
-        let comparable_value = ComparableExpr::from(value);
-        if !seen_values.insert(comparable_value) {
+        if !seen_values.insert(HashableExpr::from(value)) {
             // if the set contains a duplicate literal value, early exit.
             // rule `B033` can catch that.
             return;
@@ -73,5 +74,5 @@ pub(crate) fn iteration_over_set(checker: &mut Checker, expr: &Expr) {
     };
     diagnostic.set_fix(Fix::safe_edit(Edit::range_replacement(tuple, expr.range())));
 
-    checker.diagnostics.push(diagnostic);
+    checker.report_diagnostic(diagnostic);
 }

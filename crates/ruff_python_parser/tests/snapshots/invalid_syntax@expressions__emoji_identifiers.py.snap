@@ -88,7 +88,7 @@ Module(
 2 |     # comment 🐶
 3 | )
   | ^ Syntax Error: Expected a statement
-4 | 
+4 |
 5 | a = (🐶 +
   |
 
@@ -98,7 +98,7 @@ Module(
 2 |     # comment 🐶
 3 | )
   |  ^ Syntax Error: Expected a statement
-4 | 
+4 |
 5 | a = (🐶 +
 6 |     # comment
   |
@@ -106,7 +106,7 @@ Module(
 
   |
 3 | )
-4 | 
+4 |
 5 | a = (🐶 +
   |      ^^ Syntax Error: Got unexpected token 🐶
 6 |     # comment

@@ -1,12 +1,12 @@
 use std::fmt;
 
 use ruff_diagnostics::{Diagnostic, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast as ast;
 use ruff_text_size::Ranged;
 
 use crate::checkers::ast::Checker;
-use crate::settings::types::PythonVersion::Py311;
+use ruff_python_ast::PythonVersion;
 
 /// ## What it does
 /// Checks for uses of `typing.NoReturn` (and `typing_extensions.NoReturn`) for
@@ -40,8 +40,8 @@ use crate::settings::types::PythonVersion::Py311;
 /// - [Python documentation: `typing.NoReturn`](https://docs.python.org/3/library/typing.html#typing.NoReturn)
 ///
 /// [bottom type]: https://en.wikipedia.org/wiki/Bottom_type
-#[violation]
-pub struct NoReturnArgumentAnnotationInStub {
+#[derive(ViolationMetadata)]
+pub(crate) struct NoReturnArgumentAnnotationInStub {
     module: TypingModule,
 }
 
@@ -54,7 +54,7 @@ impl Violation for NoReturnArgumentAnnotationInStub {
 }
 
 /// PYI050
-pub(crate) fn no_return_argument_annotation(checker: &mut Checker, parameters: &ast::Parameters) {
+pub(crate) fn no_return_argument_annotation(checker: &Checker, parameters: &ast::Parameters) {
     // Ex) def func(arg: NoReturn): ...
     // Ex) def func(arg: NoReturn, /): ...
     // Ex) def func(*, arg: NoReturn): ...
@@ -65,9 +65,9 @@ pub(crate) fn no_return_argument_annotation(checker: &mut Checker, parameters: &
         .filter_map(ast::AnyParameterRef::annotation)
     {
         if is_no_return(annotation, checker) {
-            checker.diagnostics.push(Diagnostic::new(
+            checker.report_diagnostic(Diagnostic::new(
                 NoReturnArgumentAnnotationInStub {
-                    module: if checker.settings.target_version >= Py311 {
+                    module: if checker.target_version() >= PythonVersion::PY311 {
                         TypingModule::Typing
                     } else {
                         TypingModule::TypingExtensions

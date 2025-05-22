@@ -7,7 +7,7 @@ source: crates/ruff_linter/src/rules/pyflakes/mod.rs
 3 |     import os
 4 |     import os
   |            ^^ F811
-5 | 
+5 |
 6 |     # Despite this `del`, `import os` should still be flagged as shadowing an unused
   |
   = help: Remove definition: `os`
@@ -20,5 +20,3 @@ source: crates/ruff_linter/src/rules/pyflakes/mod.rs
 5 4 | 
 6 5 |     # Despite this `del`, `import os` should still be flagged as shadowing an unused
 7 6 |     # import.
-
-

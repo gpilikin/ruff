@@ -3,7 +3,7 @@ use std::path::Path;
 
 use rustc_hash::FxHashMap;
 
-use ruff_python_trivia::{indentation_at_offset, CommentRanges, SimpleTokenKind, SimpleTokenizer};
+use ruff_python_trivia::{CommentRanges, SimpleTokenKind, SimpleTokenizer, indentation_at_offset};
 use ruff_source_file::LineRanges;
 use ruff_text_size::{Ranged, TextLen, TextRange, TextSize};
 
@@ -12,8 +12,8 @@ use crate::parenthesize::parenthesized_range;
 use crate::statement_visitor::StatementVisitor;
 use crate::visitor::Visitor;
 use crate::{
-    self as ast, Arguments, CmpOp, ExceptHandler, Expr, FStringElement, MatchCase, Operator,
-    Pattern, Stmt, TypeParam,
+    self as ast, Arguments, CmpOp, DictItem, ExceptHandler, Expr, FStringElement, MatchCase,
+    Operator, Pattern, Stmt, TypeParam,
 };
 use crate::{AnyNodeRef, ExprContext};
 
@@ -546,6 +546,13 @@ pub fn any_over_body(body: &[Stmt], func: &dyn Fn(&Expr) -> bool) -> bool {
 
 pub fn is_dunder(id: &str) -> bool {
     id.starts_with("__") && id.ends_with("__")
+}
+
+/// Whether a name starts and ends with a single underscore.
+///
+/// `_a__` is considered neither a dunder nor a sunder name.
+pub fn is_sunder(id: &str) -> bool {
+    id.starts_with('_') && id.ends_with('_') && !id.starts_with("__") && !id.ends_with("__")
 }
 
 /// Return `true` if the [`Stmt`] is an assignment to a dunder (like `__all__`).
@@ -1118,6 +1125,8 @@ pub enum Truthiness {
     Falsey,
     /// The expression evaluates to a `True`-like value (e.g., `1`, `"foo"`).
     Truthy,
+    /// The expression evaluates to `None`.
+    None,
     /// The expression evaluates to an unknown value (e.g., a variable `x` of unknown type).
     Unknown,
 }
@@ -1173,7 +1182,7 @@ impl Truthiness {
                     Self::False
                 }
             }
-            Expr::NoneLiteral(_) => Self::Falsey,
+            Expr::NoneLiteral(_) => Self::None,
             Expr::EllipsisLiteral(_) => Self::Truthy,
             Expr::FString(f_string) => {
                 if is_empty_f_string(f_string) {
@@ -1188,14 +1197,32 @@ impl Truthiness {
             | Expr::Set(ast::ExprSet { elts, .. })
             | Expr::Tuple(ast::ExprTuple { elts, .. }) => {
                 if elts.is_empty() {
-                    Self::Falsey
+                    return Self::Falsey;
+                }
+
+                if elts.iter().all(Expr::is_starred_expr) {
+                    // [*foo] / [*foo, *bar]
+                    Self::Unknown
                 } else {
                     Self::Truthy
                 }
             }
             Expr::Dict(dict) => {
                 if dict.is_empty() {
-                    Self::Falsey
+                    return Self::Falsey;
+                }
+
+                if dict.items.iter().all(|item| {
+                    matches!(
+                        item,
+                        DictItem {
+                            key: None,
+                            value: Expr::Name(..)
+                        }
+                    )
+                }) {
+                    // {**foo} / {**foo, **bar}
+                    Self::Unknown
                 } else {
                     Self::Truthy
                 }
@@ -1229,6 +1256,7 @@ impl Truthiness {
         match self {
             Self::True | Self::Truthy => Some(true),
             Self::False | Self::Falsey => Some(false),
+            Self::None => Some(false),
             Self::Unknown => None,
         }
     }
@@ -1416,33 +1444,22 @@ pub fn typing_optional(elt: Expr, binding: Name) -> Expr {
 }
 
 /// Format the expressions as a `typing.Union`-style union.
+///
+/// Note: It is a syntax error to have `Union[]` so the caller
+/// should ensure that the `elts` argument is nonempty.
 pub fn typing_union(elts: &[Expr], binding: Name) -> Expr {
-    fn tuple(elts: &[Expr], binding: Name) -> Expr {
-        match elts {
-            [] => Expr::Tuple(ast::ExprTuple {
-                elts: vec![],
-                ctx: ExprContext::Load,
-                range: TextRange::default(),
-                parenthesized: true,
-            }),
-            [Expr::Tuple(ast::ExprTuple { elts, .. })] => typing_union(elts, binding),
-            [elt] => elt.clone(),
-            [rest @ .., elt] => Expr::BinOp(ast::ExprBinOp {
-                left: Box::new(tuple(rest, binding)),
-                op: Operator::BitOr,
-                right: Box::new(elt.clone()),
-                range: TextRange::default(),
-            }),
-        }
-    }
-
     Expr::Subscript(ast::ExprSubscript {
         value: Box::new(Expr::Name(ast::ExprName {
-            id: binding.clone(),
+            id: binding,
             range: TextRange::default(),
             ctx: ExprContext::Load,
         })),
-        slice: Box::new(tuple(elts, binding)),
+        slice: Box::new(Expr::Tuple(ast::ExprTuple {
+            range: TextRange::default(),
+            elts: elts.to_vec(),
+            ctx: ExprContext::Load,
+            parenthesized: false,
+        })),
         ctx: ExprContext::Load,
         range: TextRange::default(),
     })
@@ -1605,10 +1622,10 @@ mod tests {
         });
         let type_alias = Stmt::TypeAlias(StmtTypeAlias {
             name: Box::new(name.clone()),
-            type_params: Some(TypeParams {
+            type_params: Some(Box::new(TypeParams {
                 type_params: vec![type_var_one, type_var_two],
                 range: TextRange::default(),
-            }),
+            })),
             value: Box::new(constant_three.clone()),
             range: TextRange::default(),
         });

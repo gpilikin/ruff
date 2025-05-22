@@ -4,7 +4,7 @@ source: crates/ruff_linter/src/rules/pydocstyle/mod.rs
 sections.py:292:9: D417 Missing argument description in the docstring for `bar`: `y`
     |
 290 |     x = 1
-291 | 
+291 |
 292 |     def bar(y=2):  # noqa: D207, D213, D406, D407
     |         ^^^ D417
 293 |         """Nested function test for docstrings.
@@ -99,5 +99,3 @@ sections.py:498:9: D417 Missing argument description in the docstring for `test_
     |         ^^^^^^^^^^^^^^^^^^^^^ D417
 499 |         """Reproducing issue #437.
     |
-
-

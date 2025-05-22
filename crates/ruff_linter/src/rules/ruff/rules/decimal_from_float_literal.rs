@@ -1,13 +1,13 @@
 use std::fmt;
 
 use ruff_diagnostics::{AlwaysFixableViolation, Diagnostic, Edit, Fix};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast as ast;
 use ruff_python_codegen::Stylist;
 use ruff_text_size::{Ranged, TextRange};
 
-use crate::checkers::ast::Checker;
 use crate::Locator;
+use crate::checkers::ast::Checker;
 
 /// ## What it does
 /// Checks for `Decimal` calls passing a float literal.
@@ -32,22 +32,22 @@ use crate::Locator;
 /// This rule's fix is marked as unsafe because it changes the underlying value
 /// of the `Decimal` instance that is constructed. This can lead to unexpected
 /// behavior if your program relies on the previous value (whether deliberately or not).
-#[violation]
-pub struct DecimalFromFloatLiteral;
+#[derive(ViolationMetadata)]
+pub(crate) struct DecimalFromFloatLiteral;
 
 impl AlwaysFixableViolation for DecimalFromFloatLiteral {
     #[derive_message_formats]
     fn message(&self) -> String {
-        format!("`Decimal()` called with float literal argument")
+        "`Decimal()` called with float literal argument".to_string()
     }
 
     fn fix_title(&self) -> String {
-        "Use a string literal instead".to_string()
+        "Replace with string literal".to_string()
     }
 }
 
 /// RUF032: `Decimal()` called with float literal argument
-pub(crate) fn decimal_from_float_literal_syntax(checker: &mut Checker, call: &ast::ExprCall) {
+pub(crate) fn decimal_from_float_literal_syntax(checker: &Checker, call: &ast::ExprCall) {
     let Some(arg) = call.arguments.args.first() else {
         return;
     };
@@ -63,7 +63,7 @@ pub(crate) fn decimal_from_float_literal_syntax(checker: &mut Checker, call: &as
             let diagnostic = Diagnostic::new(DecimalFromFloatLiteral, arg.range()).with_fix(
                 fix_float_literal(arg.range(), float, checker.locator(), checker.stylist()),
             );
-            checker.diagnostics.push(diagnostic);
+            checker.report_diagnostic(diagnostic);
         }
     }
 }

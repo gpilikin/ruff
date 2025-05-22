@@ -151,6 +151,21 @@ PRESELECT *
 FROM {var}.table
 """
 
-# to be handled seperately
+# to be handled separately
 # query58 = f"SELECT\
 #  * FROM {var}.table"
+
+
+# https://github.com/astral-sh/ruff/issues/15653
+query59 = f"""
+    SELECT *, foo
+    FROM ({user_input}) raw
+"""
+query60 = f"""
+    SELECT *,
+        foo
+    FROM ({user_input}) raw
+"""
+
+# https://github.com/astral-sh/ruff/issues/17967
+query61 = f"SELECT * FROM table" # skip expressionless f-strings

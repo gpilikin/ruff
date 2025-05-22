@@ -1,12 +1,12 @@
 //! Rules from [isort](https://pypi.org/project/isort/).
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use annotate::annotate_imports;
 use block::{Block, Trailer};
 pub(crate) use categorize::categorize;
-use categorize::categorize_imports;
 pub use categorize::{ImportSection, ImportType};
+use categorize::{MatchSourceStrategy, categorize_imports};
 use comments::Comment;
 use normalize::normalize_imports;
 use order::order_imports;
@@ -17,9 +17,10 @@ use settings::Settings;
 use types::EitherImport::{Import, ImportFrom};
 use types::{AliasData, ImportBlock, TrailingComma};
 
-use crate::line_width::{LineLength, LineWidthBuilder};
-use crate::settings::types::PythonVersion;
 use crate::Locator;
+use crate::line_width::{LineLength, LineWidthBuilder};
+use crate::package::PackageRoot;
+use ruff_python_ast::PythonVersion;
 
 mod annotate;
 pub(crate) mod block;
@@ -62,7 +63,7 @@ pub(crate) enum AnnotatedImport<'a> {
     },
 }
 
-#[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
+#[expect(clippy::too_many_arguments)]
 pub(crate) fn format_imports(
     block: &Block,
     comments: Vec<Comment>,
@@ -71,10 +72,11 @@ pub(crate) fn format_imports(
     indentation_width: LineWidthBuilder,
     stylist: &Stylist,
     src: &[PathBuf],
-    package: Option<&Path>,
+    package: Option<PackageRoot<'_>>,
     source_type: PySourceType,
     target_version: PythonVersion,
     settings: &Settings,
+    match_source_strategy: MatchSourceStrategy,
     tokens: &Tokens,
 ) -> String {
     let trailer = &block.trailer;
@@ -102,6 +104,7 @@ pub(crate) fn format_imports(
             package,
             target_version,
             settings,
+            match_source_strategy,
         );
 
         if !block_output.is_empty() && !output.is_empty() {
@@ -148,16 +151,17 @@ pub(crate) fn format_imports(
     output
 }
 
-#[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
+#[expect(clippy::too_many_arguments)]
 fn format_import_block(
     block: ImportBlock,
     line_length: LineLength,
     indentation_width: LineWidthBuilder,
     stylist: &Stylist,
     src: &[PathBuf],
-    package: Option<&Path>,
+    package: Option<PackageRoot<'_>>,
     target_version: PythonVersion,
     settings: &Settings,
+    match_source_strategy: MatchSourceStrategy,
 ) -> String {
     #[derive(Debug, Copy, Clone, PartialEq, Eq)]
     enum LineInsertion {
@@ -168,7 +172,6 @@ fn format_import_block(
         Inserted,
     }
 
-    // Categorize by type (e.g., first-party vs. third-party).
     let mut block_by_type = categorize_imports(
         block,
         src,
@@ -179,6 +182,7 @@ fn format_import_block(
         settings.no_sections,
         &settings.section_order,
         &settings.default_section,
+        match_source_strategy,
     );
 
     let mut output = String::new();
@@ -848,6 +852,57 @@ mod tests {
                     ..super::settings::Settings::default()
                 },
                 ..LinterSettings::for_rule(Rule::MissingRequiredImport)
+            },
+        )?;
+        assert_messages!(snapshot, diagnostics);
+        Ok(())
+    }
+
+    #[test_case(Path::new("this_this_from.py"))]
+    fn required_importfrom_with_useless_alias(path: &Path) -> Result<()> {
+        let snapshot = format!(
+            "required_importfrom_with_useless_alias_{}",
+            path.to_string_lossy()
+        );
+        let diagnostics = test_path(
+            Path::new("isort/required_imports").join(path).as_path(),
+            &LinterSettings {
+                src: vec![test_resource_path("fixtures/isort")],
+                isort: super::settings::Settings {
+                    required_imports: BTreeSet::from_iter([NameImport::ImportFrom(
+                        MemberNameImport::alias(
+                            "module".to_string(),
+                            "this".to_string(),
+                            "this".to_string(),
+                        ),
+                    )]),
+                    ..super::settings::Settings::default()
+                },
+                ..LinterSettings::for_rules([Rule::MissingRequiredImport, Rule::UselessImportAlias])
+            },
+        )?;
+
+        assert_messages!(snapshot, diagnostics);
+        Ok(())
+    }
+
+    #[test_case(Path::new("this_this.py"))]
+    fn required_import_with_useless_alias(path: &Path) -> Result<()> {
+        let snapshot = format!(
+            "required_import_with_useless_alias_{}",
+            path.to_string_lossy()
+        );
+        let diagnostics = test_path(
+            Path::new("isort/required_imports").join(path).as_path(),
+            &LinterSettings {
+                src: vec![test_resource_path("fixtures/isort")],
+                isort: super::settings::Settings {
+                    required_imports: BTreeSet::from_iter([NameImport::Import(
+                        ModuleNameImport::alias("this".to_string(), "this".to_string()),
+                    )]),
+                    ..super::settings::Settings::default()
+                },
+                ..LinterSettings::for_rules([Rule::MissingRequiredImport, Rule::UselessImportAlias])
             },
         )?;
         assert_messages!(snapshot, diagnostics);

@@ -2,7 +2,7 @@
 
 use bitflags::bitflags;
 
-use ruff_python_ast::{self as ast, helpers::map_subscript, Expr, Stmt};
+use ruff_python_ast::{self as ast, Expr, Stmt, helpers::map_subscript};
 use ruff_text_size::{Ranged, TextRange};
 
 use crate::SemanticModel;
@@ -70,7 +70,7 @@ impl Ranged for DunderAllDefinition<'_> {
     }
 }
 
-impl<'a> SemanticModel<'a> {
+impl SemanticModel<'_> {
     /// Extract the names bound to a given __all__ assignment.
     pub fn extract_dunder_all_names<'expr>(
         &self,

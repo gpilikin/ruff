@@ -91,14 +91,14 @@ Module(
 3 |     pass
 4 |         a + b
   | ^^^^^^^^ Syntax Error: Unexpected indentation
-5 | 
+5 |
 6 |     pass
   |
 
 
   |
 6 |     pass
-7 | 
+7 |
+  | ^ Syntax Error: Expected a statement
 8 | a = 10
-  |  Syntax Error: Expected a statement
   |

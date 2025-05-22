@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use crate::file_revision::FileRevision;
 use zip::result::ZipResult;
 use zip::write::FileOptions;
-use zip::{read::ZipFile, CompressionMethod, ZipArchive, ZipWriter};
+use zip::{CompressionMethod, ZipArchive, ZipWriter, read::ZipFile};
 
 pub use self::path::{VendoredPath, VendoredPathBuf};
 
@@ -172,7 +172,7 @@ impl Default for VendoredFileSystem {
 /// that users of the `VendoredFileSystem` could realistically need.
 /// For debugging purposes, however, we want to have all information
 /// available.
-#[allow(unused)]
+#[expect(unused)]
 #[derive(Debug)]
 struct ZipFileDebugInfo {
     crc32_hash: u32,
@@ -270,7 +270,7 @@ impl VendoredZipArchive {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct NormalizedVendoredPath<'a>(Cow<'a, str>);
 
-impl<'a> NormalizedVendoredPath<'a> {
+impl NormalizedVendoredPath<'_> {
     fn with_trailing_slash(self) -> Self {
         debug_assert!(!self.0.ends_with('/'));
         let mut data = self.0.into_owned();
@@ -418,7 +418,7 @@ pub(crate) mod tests {
 
     #[test]
     fn filesystem_debug_implementation_alternate() {
-        assert_snapshot!(format!("{:#?}", mock_typeshed()), @r###"
+        assert_snapshot!(format!("{:#?}", mock_typeshed()), @r#"
         VendoredFileSystem {
             inner_mutex_poisoned: false,
             paths: [
@@ -454,7 +454,7 @@ pub(crate) mod tests {
                 },
             },
         }
-        "###);
+        "#);
     }
 
     fn test_directory(dirname: &str) {
@@ -503,9 +503,11 @@ pub(crate) mod tests {
         let path = VendoredPath::new(path);
         assert!(!mock_typeshed.exists(path));
         assert!(mock_typeshed.metadata(path).is_err());
-        assert!(mock_typeshed
-            .read_to_string(path)
-            .is_err_and(|err| err.to_string().contains("file not found")));
+        assert!(
+            mock_typeshed
+                .read_to_string(path)
+                .is_err_and(|err| err.to_string().contains("file not found"))
+        );
     }
 
     #[test]

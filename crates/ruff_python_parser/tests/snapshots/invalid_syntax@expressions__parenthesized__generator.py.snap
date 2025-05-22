@@ -140,5 +140,5 @@ Module(
   |
 1 | (*x for x in y)
 2 | (x := 1, for x in y)
-  |                      Syntax Error: Expected a statement
+  |                     ^ Syntax Error: Expected a statement
   |

@@ -2,6 +2,11 @@
 
 Welcome! We're happy to have you here. Thank you in advance for your contribution to Ruff.
 
+> [!NOTE]
+>
+> This guide is for Ruff. If you're looking to contribute to ty, please see [the ty contributing
+> guide](https://github.com/astral-sh/ruff/blob/main/crates/ty/CONTRIBUTING.md).
+
 ## The Basics
 
 Ruff welcomes contributions in the form of pull requests.
@@ -139,7 +144,7 @@ At a high level, the steps involved in adding a new lint rule are as follows:
 1. Create a file for your rule (e.g., `crates/ruff_linter/src/rules/flake8_bugbear/rules/assert_false.rs`).
 
 1. In that file, define a violation struct (e.g., `pub struct AssertFalse`). You can grep for
-    `#[violation]` to see examples.
+    `#[derive(ViolationMetadata)]` to see examples.
 
 1. In that file, define a function that adds the violation to the diagnostic list as appropriate
     (e.g., `pub(crate) fn assert_false`) based on whatever inputs are required for the rule (e.g.,
@@ -366,6 +371,15 @@ uvx --from ./python/ruff-ecosystem ruff-ecosystem format ruff "./target/debug/ru
 
 See the [ruff-ecosystem package](https://github.com/astral-sh/ruff/tree/main/python/ruff-ecosystem) for more details.
 
+## Upgrading Rust
+
+1. Change the `channel` in `./rust-toolchain.toml` to the new Rust version (`<latest>`)
+1. Change the `rust-version` in the `./Cargo.toml` to `<latest> - 2` (e.g. 1.84 if the latest is 1.86)
+1. Run `cargo clippy --fix --allow-dirty --allow-staged` to fix new clippy warnings
+1. Create and merge the PR
+1. Bump the Rust version in Ruff's conda forge recipe. See [this PR](https://github.com/conda-forge/ruff-feedstock/pull/266) for an example.
+1. Enjoy the new Rust version!
+
 ## Benchmarking and Profiling
 
 We have several ways of benchmarking and profiling Ruff:
@@ -397,7 +411,7 @@ cargo install hyperfine
 To benchmark the release build:
 
 ```shell
-cargo build --release && hyperfine --warmup 10 \
+cargo build --release --bin ruff && hyperfine --warmup 10 \
   "./target/release/ruff check ./crates/ruff_linter/resources/test/cpython/ --no-cache -e" \
   "./target/release/ruff check ./crates/ruff_linter/resources/test/cpython/ -e"
 
@@ -467,7 +481,7 @@ cargo build --release && hyperfine --warmup 10 \
   "./target/release/ruff check ./crates/ruff_linter/resources/test/cpython/ --no-cache -e --select W505,E501"
 ```
 
-You can run `poetry install` from `./scripts/benchmarks` to create a working environment for the
+You can run `uv venv --project ./scripts/benchmarks`, activate the venv and then run `uv sync --project ./scripts/benchmarks` to create a working environment for the
 above. All reported benchmarks were computed using the versions specified by
 `./scripts/benchmarks/pyproject.toml` on Python 3.11.
 
@@ -526,7 +540,7 @@ cargo benchmark
 #### Benchmark-driven Development
 
 Ruff uses [Criterion.rs](https://bheisler.github.io/criterion.rs/book/) for benchmarks. You can use
-`--save-baseline=<name>` to store an initial baseline benchmark (e.g. on `main`) and then use
+`--save-baseline=<name>` to store an initial baseline benchmark (e.g., on `main`) and then use
 `--benchmark=<name>` to compare against that benchmark. Criterion will print a message telling you
 if the benchmark improved/regressed compared to that baseline.
 
@@ -596,8 +610,7 @@ Then convert the recorded profile
 perf script -F +pid > /tmp/test.perf
 ```
 
-You can now view the converted file with [firefox profiler](https://profiler.firefox.com/), with a
-more in-depth guide [here](https://profiler.firefox.com/docs/#/./guide-perf-profiling)
+You can now view the converted file with [firefox profiler](https://profiler.firefox.com/). To learn more about Firefox profiler, read the [Firefox profiler profiling-guide](https://profiler.firefox.com/docs/#/./guide-perf-profiling).
 
 An alternative is to convert the perf data to `flamegraph.svg` using
 [flamegraph](https://github.com/flamegraph-rs/flamegraph) (`cargo install flamegraph`):
@@ -678,9 +691,9 @@ utils with it:
 23 Newline 24
 ```
 
-- `cargo dev print-cst <file>`: Print the CST of a python file using
+- `cargo dev print-cst <file>`: Print the CST of a Python file using
     [LibCST](https://github.com/Instagram/LibCST), which is used in addition to the RustPython parser
-    in Ruff. E.g. for `if True: pass # comment` everything including the whitespace is represented:
+    in Ruff. For example, for `if True: pass # comment`, everything, including the whitespace, is represented:
 
 ```text
 Module {
@@ -863,7 +876,7 @@ each configuration file.
 
 The package root is used to determine a file's "module path". Consider, again, `baz.py`. In that
 case, `./my_project/src/foo` was identified as the package root, so the module path for `baz.py`
-would resolve to  `foo.bar.baz` — as computed by taking the relative path from the package root
+would resolve to `foo.bar.baz` — as computed by taking the relative path from the package root
 (inclusive of the root itself). The module path can be thought of as "the path you would use to
 import the module" (e.g., `import foo.bar.baz`).
 

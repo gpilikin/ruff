@@ -75,7 +75,7 @@ PYI013.py:13:5: PYI013 [*] Non-empty class body must not contain `...`
 PYI013.py:21:5: PYI013 [*] Non-empty class body must not contain `...`
    |
 19 |     """
-20 | 
+20 |
 21 |     ...
    |     ^^^ PYI013
    |
@@ -132,7 +132,7 @@ PYI013.py:36:5: PYI013 [*] Non-empty class body must not contain `...`
 35 |     value: int
 36 |     ...
    |     ^^^ PYI013
-37 | 
+37 |
 38 |     def __init__():
    |
    = help: Remove unnecessary `...`
@@ -145,5 +145,3 @@ PYI013.py:36:5: PYI013 [*] Non-empty class body must not contain `...`
 37 36 | 
 38 37 |     def __init__():
 39 38 |         pass
-
-

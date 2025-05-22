@@ -122,19 +122,19 @@ Module(
 
   |
 1 | # Unparenthesized named expression not allowed in key
-2 | 
+2 |
 3 | {x := 1: y, z := 2: a}
   |  ^^^^^^ Syntax Error: Unparenthesized named expression cannot be used here
-4 | 
+4 |
 5 | x + y
   |
 
 
   |
 1 | # Unparenthesized named expression not allowed in key
-2 | 
+2 |
 3 | {x := 1: y, z := 2: a}
   |               ^^ Syntax Error: Expected ':', found ':='
-4 | 
+4 |
 5 | x + y
   |

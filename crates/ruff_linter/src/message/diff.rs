@@ -22,11 +22,11 @@ use crate::text_helpers::ShowNonprinting;
 /// * Compute the diff from the [`Edit`] because diff calculation is expensive.
 pub(super) struct Diff<'a> {
     fix: &'a Fix,
-    source_code: &'a SourceFile,
+    source_code: SourceFile,
 }
 
 impl<'a> Diff<'a> {
-    pub(crate) fn from_message(message: &'a Message) -> Option<Diff> {
+    pub(crate) fn from_message(message: &'a Message) -> Option<Diff<'a>> {
         message.fix().map(|fix| Diff {
             source_code: message.source_file(),
             fix,

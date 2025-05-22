@@ -1,5 +1,5 @@
 use ruff_diagnostics::{Diagnostic, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::{self as ast, Expr};
 use ruff_python_semantic::SemanticModel;
 use ruff_text_size::Ranged;
@@ -31,35 +31,48 @@ use crate::checkers::ast::Checker;
 ///     pass
 /// ```
 ///
-#[violation]
-pub struct NanComparison {
+#[derive(ViolationMetadata)]
+pub(crate) struct NanComparison {
     nan: Nan,
 }
 
 impl Violation for NanComparison {
     #[derive_message_formats]
     fn message(&self) -> String {
-        let NanComparison { nan } = self;
-        match nan {
-            Nan::Math => format!("Comparing against a NaN value; use `math.isnan` instead"),
-            Nan::NumPy => format!("Comparing against a NaN value; use `np.isnan` instead"),
+        match self.nan {
+            Nan::Math => "Comparing against a NaN value; use `math.isnan` instead".to_string(),
+            Nan::NumPy => "Comparing against a NaN value; use `np.isnan` instead".to_string(),
         }
     }
 }
 
 /// PLW0177
-pub(crate) fn nan_comparison(checker: &mut Checker, left: &Expr, comparators: &[Expr]) {
-    for expr in std::iter::once(left).chain(comparators) {
+pub(crate) fn nan_comparison(checker: &Checker, left: &Expr, comparators: &[Expr]) {
+    nan_comparison_impl(checker, std::iter::once(left).chain(comparators));
+}
+
+/// PLW0177
+pub(crate) fn nan_comparison_match(checker: &Checker, cases: &[ast::MatchCase]) {
+    nan_comparison_impl(
+        checker,
+        cases
+            .iter()
+            .filter_map(|case| case.pattern.as_match_value().map(|pattern| &*pattern.value)),
+    );
+}
+
+fn nan_comparison_impl<'a>(checker: &Checker, comparators: impl Iterator<Item = &'a Expr>) {
+    for expr in comparators {
         if let Some(qualified_name) = checker.semantic().resolve_qualified_name(expr) {
             match qualified_name.segments() {
                 ["numpy", "nan" | "NAN" | "NaN"] => {
-                    checker.diagnostics.push(Diagnostic::new(
+                    checker.report_diagnostic(Diagnostic::new(
                         NanComparison { nan: Nan::NumPy },
                         expr.range(),
                     ));
                 }
                 ["math", "nan"] => {
-                    checker.diagnostics.push(Diagnostic::new(
+                    checker.report_diagnostic(Diagnostic::new(
                         NanComparison { nan: Nan::Math },
                         expr.range(),
                     ));
@@ -69,7 +82,7 @@ pub(crate) fn nan_comparison(checker: &mut Checker, left: &Expr, comparators: &[
         }
 
         if is_nan_float(expr, checker.semantic()) {
-            checker.diagnostics.push(Diagnostic::new(
+            checker.report_diagnostic(Diagnostic::new(
                 NanComparison { nan: Nan::Math },
                 expr.range(),
             ));

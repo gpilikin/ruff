@@ -88,3 +88,22 @@ nan_comparison.py:53:9: PLW0177 Comparing against a NaN value; use `math.isnan` 
    |         ^^^^^^^^^^^^^^^^^^^^^ PLW0177
 54 |     pass
    |
+
+nan_comparison.py:59:10: PLW0177 Comparing against a NaN value; use `np.isnan` instead
+   |
+57 | match number:
+58 |     # Errors
+59 |     case np.nan: ...
+   |          ^^^^^^ PLW0177
+60 |     case math.nan: ...
+   |
+
+nan_comparison.py:60:10: PLW0177 Comparing against a NaN value; use `math.isnan` instead
+   |
+58 |     # Errors
+59 |     case np.nan: ...
+60 |     case math.nan: ...
+   |          ^^^^^^^^ PLW0177
+61 |
+62 |     # No errors
+   |

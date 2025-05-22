@@ -1,7 +1,8 @@
 use std::string::ToString;
 
 use ruff_diagnostics::{Diagnostic, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
+use ruff_python_semantic::BindingKind::SubmoduleImport;
 use ruff_python_semantic::{Scope, ScopeId};
 use ruff_text_size::Ranged;
 
@@ -32,8 +33,8 @@ use crate::checkers::ast::Checker;
 ///     global x
 ///     x += 1
 /// ```
-#[violation]
-pub struct UndefinedLocal {
+#[derive(ViolationMetadata)]
+pub(crate) struct UndefinedLocal {
     name: String,
 }
 
@@ -46,12 +47,7 @@ impl Violation for UndefinedLocal {
 }
 
 /// F823
-pub(crate) fn undefined_local(
-    checker: &Checker,
-    scope_id: ScopeId,
-    scope: &Scope,
-    diagnostics: &mut Vec<Diagnostic>,
-) {
+pub(crate) fn undefined_local(checker: &Checker, scope_id: ScopeId, scope: &Scope) {
     if scope.kind.is_function() {
         for (name, binding_id) in scope.bindings() {
             // If the variable shadows a binding in a parent scope...
@@ -61,13 +57,18 @@ pub(crate) fn undefined_local(
                 if let Some(range) = shadowed.references().find_map(|reference_id| {
                     let reference = checker.semantic().reference(reference_id);
                     if reference.scope_id() == scope_id {
-                        Some(reference.range())
+                        // FIXME: ignore submodules
+                        if let SubmoduleImport(..) = shadowed.kind {
+                            None
+                        } else {
+                            Some(reference.range())
+                        }
                     } else {
                         None
                     }
                 }) {
                     // Then it's probably an error.
-                    diagnostics.push(Diagnostic::new(
+                    checker.report_diagnostic(Diagnostic::new(
                         UndefinedLocal {
                             name: name.to_string(),
                         },

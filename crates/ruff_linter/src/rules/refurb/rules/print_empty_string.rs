@@ -1,5 +1,5 @@
 use ruff_diagnostics::{Applicability, Diagnostic, Edit, Fix, FixAvailability, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::helpers::contains_effect;
 use ruff_python_ast::{self as ast, Expr};
 use ruff_python_codegen::Generator;
@@ -32,8 +32,8 @@ use crate::checkers::ast::Checker;
 ///
 /// ## References
 /// - [Python documentation: `print`](https://docs.python.org/3/library/functions.html#print)
-#[violation]
-pub struct PrintEmptyString {
+#[derive(ViolationMetadata)]
+pub(crate) struct PrintEmptyString {
     reason: Reason,
 }
 
@@ -52,26 +52,25 @@ impl Violation for PrintEmptyString {
 
     #[derive_message_formats]
     fn message(&self) -> String {
-        let PrintEmptyString { reason } = self;
-        match reason {
-            Reason::EmptyArgument => format!("Unnecessary empty string passed to `print`"),
-            Reason::UselessSeparator => format!("Unnecessary separator passed to `print`"),
-            Reason::Both => format!("Unnecessary empty string and separator passed to `print`"),
+        match self.reason {
+            Reason::EmptyArgument => "Unnecessary empty string passed to `print`".to_string(),
+            Reason::UselessSeparator => "Unnecessary separator passed to `print`".to_string(),
+            Reason::Both => "Unnecessary empty string and separator passed to `print`".to_string(),
         }
     }
 
     fn fix_title(&self) -> Option<String> {
-        let PrintEmptyString { reason } = self;
-        match reason {
-            Reason::EmptyArgument => Some("Remove empty string".to_string()),
-            Reason::UselessSeparator => Some("Remove separator".to_string()),
-            Reason::Both => Some("Remove empty string and separator".to_string()),
-        }
+        let title = match self.reason {
+            Reason::EmptyArgument => "Remove empty string",
+            Reason::UselessSeparator => "Remove separator",
+            Reason::Both => "Remove empty string and separator",
+        };
+        Some(title.to_string())
     }
 }
 
 /// FURB105
-pub(crate) fn print_empty_string(checker: &mut Checker, call: &ast::ExprCall) {
+pub(crate) fn print_empty_string(checker: &Checker, call: &ast::ExprCall) {
     if !checker.semantic().match_builtin_expr(&call.func, "print") {
         return;
     }
@@ -97,7 +96,7 @@ pub(crate) fn print_empty_string(checker: &mut Checker, call: &ast::ExprCall) {
                 .into_fix(),
             );
 
-            checker.diagnostics.push(diagnostic);
+            checker.report_diagnostic(diagnostic);
         }
 
         [arg] if arg.is_starred_expr() => {
@@ -125,7 +124,7 @@ pub(crate) fn print_empty_string(checker: &mut Checker, call: &ast::ExprCall) {
                     .into_fix(),
                 );
 
-                checker.diagnostics.push(diagnostic);
+                checker.report_diagnostic(diagnostic);
             }
         }
 
@@ -145,7 +144,7 @@ pub(crate) fn print_empty_string(checker: &mut Checker, call: &ast::ExprCall) {
             let empty_separator = call
                 .arguments
                 .find_keyword("sep")
-                .map_or(false, |keyword| is_empty_string(&keyword.value));
+                .is_some_and(|keyword| is_empty_string(&keyword.value));
             if !empty_separator {
                 return;
             }
@@ -187,7 +186,7 @@ pub(crate) fn print_empty_string(checker: &mut Checker, call: &ast::ExprCall) {
                     .into_fix(),
             );
 
-            checker.diagnostics.push(diagnostic);
+            checker.report_diagnostic(diagnostic);
         }
     }
 }

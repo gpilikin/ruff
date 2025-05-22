@@ -1,5 +1,5 @@
 use ruff_diagnostics::{Diagnostic, Edit, Fix, FixAvailability, Violation};
-use ruff_macros::{derive_message_formats, violation};
+use ruff_macros::{ViolationMetadata, derive_message_formats};
 use ruff_python_ast::{self as ast, Expr, ExprCall};
 use ruff_text_size::Ranged;
 
@@ -15,7 +15,7 @@ use crate::checkers::ast::Checker;
 /// the use of `from_float` and `from_decimal` methods is unnecessary, and
 /// should be avoided in favor of the more concise constructor syntax.
 ///
-/// ## Examples
+/// ## Example
 /// ```python
 /// Decimal.from_float(4.2)
 /// Decimal.from_float(float("inf"))
@@ -34,8 +34,8 @@ use crate::checkers::ast::Checker;
 /// ## References
 /// - [Python documentation: `decimal`](https://docs.python.org/3/library/decimal.html)
 /// - [Python documentation: `fractions`](https://docs.python.org/3/library/fractions.html)
-#[violation]
-pub struct UnnecessaryFromFloat {
+#[derive(ViolationMetadata)]
+pub(crate) struct UnnecessaryFromFloat {
     method_name: MethodName,
     constructor: Constructor,
 }
@@ -59,7 +59,7 @@ impl Violation for UnnecessaryFromFloat {
 }
 
 /// FURB164
-pub(crate) fn unnecessary_from_float(checker: &mut Checker, call: &ExprCall) {
+pub(crate) fn unnecessary_from_float(checker: &Checker, call: &ExprCall) {
     let Expr::Attribute(ast::ExprAttribute { value, attr, .. }) = &*call.func else {
         return;
     };
@@ -109,14 +109,14 @@ pub(crate) fn unnecessary_from_float(checker: &mut Checker, call: &ExprCall) {
     'short_circuit: {
         if !matches!(constructor, Constructor::Decimal) {
             break 'short_circuit;
-        };
+        }
         if !(method_name == MethodName::FromFloat) {
             break 'short_circuit;
-        };
+        }
 
         let Some(value) = (match method_name {
-            MethodName::FromFloat => call.arguments.find_argument("f", 0),
-            MethodName::FromDecimal => call.arguments.find_argument("dec", 0),
+            MethodName::FromFloat => call.arguments.find_argument_value("f", 0),
+            MethodName::FromDecimal => call.arguments.find_argument_value("dec", 0),
         }) else {
             return;
         };
@@ -131,9 +131,9 @@ pub(crate) fn unnecessary_from_float(checker: &mut Checker, call: &ExprCall) {
         };
 
         // Must have exactly one argument, which is a string literal.
-        if arguments.keywords.len() != 0 {
+        if !arguments.keywords.is_empty() {
             break 'short_circuit;
-        };
+        }
         let [float] = arguments.args.as_ref() else {
             break 'short_circuit;
         };
@@ -150,20 +150,20 @@ pub(crate) fn unnecessary_from_float(checker: &mut Checker, call: &ExprCall) {
         // Must be a call to the `float` builtin.
         if !semantic.match_builtin_expr(func, "float") {
             break 'short_circuit;
-        };
+        }
 
         let replacement = checker.locator().slice(float).to_string();
         diagnostic.set_fix(Fix::safe_edits(
             edit,
             [Edit::range_replacement(replacement, call.range())],
         ));
-        checker.diagnostics.push(diagnostic);
+        checker.report_diagnostic(diagnostic);
 
         return;
     }
 
     diagnostic.set_fix(Fix::safe_edit(edit));
-    checker.diagnostics.push(diagnostic);
+    checker.report_diagnostic(diagnostic);
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

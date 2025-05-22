@@ -77,6 +77,6 @@ Module(
 1 | # Missing test expression, followed by an expression
 2 | x if
   |     ^ Syntax Error: Expected an expression
-3 | 
+3 |
 4 | 1 + 1
   |
