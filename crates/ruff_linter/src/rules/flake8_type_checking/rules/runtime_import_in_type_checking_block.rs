@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use anyhow::Result;
 use rustc_hash::FxHashMap;
-
+use unicode_normalization::UnicodeNormalization;
 use ruff_diagnostics::{Diagnostic, Fix, FixAvailability, Violation};
 use ruff_macros::{derive_message_formats, ViolationMetadata};
 use ruff_python_semantic::{Imported, NodeId, Scope};
@@ -106,74 +106,91 @@ pub(crate) fn runtime_import_in_type_checking_block(
     let mut actions: FxHashMap<(NodeId, Action), Vec<ImportBinding>> = FxHashMap::default();
 
     for binding_id in scope.binding_ids() {
-        let binding = checker.semantic().binding(binding_id);
+        let top_binding = checker.semantic().binding(binding_id);
 
-        let Some(import) = binding.as_any_import() else {
+        let Some(_) = top_binding.as_any_import() else {
             continue;
         };
 
-        let Some(reference_id) = binding.references.first().copied() else {
+        let Some(reference_id) = top_binding.references.first().copied() else {
             continue;
         };
 
-        if binding.context.is_typing()
-            && binding.references().any(|reference_id| {
+        let binding_name = top_binding
+            .name(checker.source())
+            .split('.')
+            .next()
+            .unwrap_or("");
+
+        // NOTE: It’s necessary to go through all bindings, including shadowed ones,
+        //       using the module name.
+        for binding in scope
+            .get_all(&binding_name.nfkc().collect::<String>())
+            .map(|binding_id| checker.semantic().binding(binding_id))
+        {
+            if binding.context.is_typing()
+                && binding.references().any(|reference_id| {
                 checker
                     .semantic()
                     .reference(reference_id)
                     .in_runtime_context()
             })
-        {
-            let Some(node_id) = binding.source else {
-                continue;
-            };
+            {
+                let Some(import) = binding.as_any_import() else {
+                    continue;
+                };
 
-            let import = ImportBinding {
-                import,
-                reference_id,
-                binding,
-                range: binding.range(),
-                parent_range: binding.parent_range(checker.semantic()),
-            };
+                let Some(node_id) = binding.source else {
+                    continue;
+                };
 
-            if checker.rule_is_ignored(Rule::RuntimeImportInTypeCheckingBlock, import.start())
-                || import.parent_range.is_some_and(|parent_range| {
+                let import = ImportBinding {
+                    import,
+                    reference_id,
+                    binding,
+                    range: binding.range(),
+                    parent_range: binding.parent_range(checker.semantic()),
+                };
+
+                if checker.rule_is_ignored(Rule::RuntimeImportInTypeCheckingBlock, import.start())
+                    || import.parent_range.is_some_and(|parent_range| {
                     checker.rule_is_ignored(
                         Rule::RuntimeImportInTypeCheckingBlock,
                         parent_range.start(),
                     )
                 })
-            {
-                actions
-                    .entry((node_id, Action::Ignore))
-                    .or_default()
-                    .push(import);
-            } else {
-                // Determine whether the member should be fixed by moving the import out of the
-                // type-checking block, or by quoting its references.
-                // TODO: We should check `reference.in_annotated_type_alias()`
-                //       as well to match the behavior of the flake8 plugin
-                //       although maybe the best way forward is to add an
-                //       additional setting to configure whether quoting
-                //       or moving the import is preferred for type aliases
-                //       since some people will consistently use their
-                //       type aliases at runtimes, while others won't, so
-                //       the best solution is unclear.
-                if checker.settings.flake8_type_checking.quote_annotations
-                    && binding.references().all(|reference_id| {
-                        let reference = checker.semantic().reference(reference_id);
-                        reference.in_typing_context() || reference.in_runtime_evaluated_annotation()
-                    })
                 {
                     actions
-                        .entry((node_id, Action::Quote))
+                        .entry((node_id, Action::Ignore))
                         .or_default()
                         .push(import);
                 } else {
-                    actions
-                        .entry((node_id, Action::Move))
-                        .or_default()
-                        .push(import);
+                    // Determine whether the member should be fixed by moving the import out of the
+                    // type-checking block, or by quoting its references.
+                    // TODO: We should check `reference.in_annotated_type_alias()`
+                    //       as well to match the behavior of the flake8 plugin
+                    //       although maybe the best way forward is to add an
+                    //       additional setting to configure whether quoting
+                    //       or moving the import is preferred for type aliases
+                    //       since some people will consistently use their
+                    //       type aliases at runtimes, while others won't, so
+                    //       the best solution is unclear.
+                    if checker.settings.flake8_type_checking.quote_annotations
+                        && binding.references().all(|reference_id| {
+                        let reference = checker.semantic().reference(reference_id);
+                        reference.in_typing_context() || reference.in_runtime_evaluated_annotation()
+                    })
+                    {
+                        actions
+                            .entry((node_id, Action::Quote))
+                            .or_default()
+                            .push(import);
+                    } else {
+                        actions
+                            .entry((node_id, Action::Move))
+                            .or_default()
+                            .push(import);
+                    }
                 }
             }
         }
