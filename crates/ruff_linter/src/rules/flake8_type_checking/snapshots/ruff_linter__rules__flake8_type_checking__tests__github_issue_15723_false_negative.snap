@@ -1,4 +1,24 @@
 ---
 source: crates/ruff_linter/src/rules/flake8_type_checking/mod.rs
 ---
+<filename>:5:12: TC004 [*] Move import `importlib.abc` out of type-checking block. Import is used for more than type hinting.
+  |
+3 | from typing import TYPE_CHECKING
+4 | if TYPE_CHECKING:
+5 |     import importlib.abc
+  |            ^^^^^^^^^^^^^ TC004
+6 |     import importlib.machinery
+7 | class Foo(importlib.abc.MetaPathFinder):
+  |
+  = help: Move out of type-checking block
 
+ℹ Unsafe fix
+1 1 | 
+2 2 | from __future__ import annotations
+3 3 | from typing import TYPE_CHECKING
+  4 |+import importlib.abc
+4 5 | if TYPE_CHECKING:
+5   |-    import importlib.abc
+6 6 |     import importlib.machinery
+7 7 | class Foo(importlib.abc.MetaPathFinder):
+8 8 |     def bar(self) -> importlib.machinery.ModuleSpec: ...
